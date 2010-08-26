@@ -1,0 +1,12 @@
+mq.on error: {err ->
+  err.printStackTrace()
+}
+
+mq.exchange(name: "webhooks.test", type: "topic", durable: false, autoDelete: true) {
+  queue(routingKey: "test.key") {
+    publish body: { msg, out ->
+			msg.properties.contentType = "application/json"
+			out.write("""{"test":"value","number":1}""".bytes)
+		}
+  }
+}
