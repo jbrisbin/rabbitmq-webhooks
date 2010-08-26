@@ -10,7 +10,8 @@ You first need to check out and build the public umbrella:
 
 [http://www.rabbitmq.com/plugin-development.html#getting-started](http://www.rabbitmq.com/plugin-development.html#getting-started)
 
-Then checkout and build rabbitmq-server and rabbitmq-erlang-client:
+First, build rabbitmq-server and rabbitmq-erlang-client, then build the 
+plugin:
 
 <pre><code>
 cd ~/src/rabbitmq-public-umbrella
@@ -111,4 +112,5 @@ Lots and lots still to do:
 ### License ###
 
 Licensed under the Mozilla Public License:
-http://www.rabbitmq.com/mpl.html
+
+[http://www.rabbitmq.com/mpl.html](http://www.rabbitmq.com/mpl.html)
