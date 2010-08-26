@@ -4,7 +4,53 @@ This plugin provides a "webhook" functionality to a RabbitMQ broker.
 Any message processed by this plugin will be forwarded to the URL 
 you configure, using the method you give it. 
 
-#### For example: ####
+### Building ###
+
+You first need to check out and build the public umbrella:
+
+[http://www.rabbitmq.com/plugin-development.html#getting-started](http://www.rabbitmq.com/plugin-development.html#getting-started)
+
+Then checkout and build rabbitmq-server and rabbitmq-erlang-client:
+
+<pre><code>
+cd ~/src/rabbitmq-public-umbrella
+git clone git://github.com/jbrisbin/rabbitmq-webhooks.git
+cd rabbitmq-webhooks
+make
+</code></pre>
+
+### Installing ###
+
+To install in the broker that was built from source, copy the required 
+.ez files to the "plugins" directory:
+
+<pre><code>
+cd ../rabbitmq-server
+mkdir plugins
+cp ../rabbitmq-webhooks/dist/amqp_client.ez plugins
+cp ../rabbitmq-webhooks/dist/lhttpc.ez plugins
+cp ../rabbitmq-webhooks/dist/rabbit_webhooks.ez plugins
+make run
+</code></pre>
+
+You should see (at the top):
+
+<pre><code>
+3 plugins activated:
+* amqp_client
+* lhttpc
+* rabbit_webhooks	
+</code></pre>
+
+and (when the server is started):
+
+<pre><code>
+Configuring Webhooks...done
+</code></pre>
+
+Logging is done to the server log file.
+
+### Why? ###
 
 If you configure a webhook to bind to exchange "test" with routing key 
 "#", any messages published with that exchange and routing key will be 
@@ -23,35 +69,34 @@ from the queue. If there was an error, the message is NOT ACK'd and stays in
 the queue for possible later delivery. There's probably a better way to handle 
 this. I'm open for suggestions! :)
 
-#### Example Configuration ####
+### Example Configuration ###
 
 An example rabbit.config file is included. Here it is:
 
-<pre><code>
-	[
-		{rabbit_webhooks, [
-			{webhooks, [
-				{test_one, [
-					{url, "http://localhost:8000/rest"},
-					{method, post},
-					{exchange, [
-						{exchange, &lt;&lt;"webhooks.test"&gt;&gt;},
-						{type, &lt;&lt;"topic"&gt;&gt;},
-						{auto_delete, true},
-						{durable, false}
-					]},
-					{queue, [
-						{queue, &lt;&lt;"webhooks.test.q"&gt;&gt;},
-						{auto_delete, true}
-					]},
-					{routing_key, &lt;&lt;"#"&gt;&gt;}
-				]}
+<pre><code>[
+	{rabbit_webhooks, [
+		{webhooks, [
+			{test_one, [
+				{url, "http://localhost:8000/rest"},
+				{method, post},
+				{exchange, [
+					{exchange, &lt;&lt;"webhooks.test"&gt;&gt;},
+					{type, &lt;&lt;"topic"&gt;&gt;},
+					{auto_delete, true},
+					{durable, false}
+				]},
+				{queue, [
+					{queue, &lt;&lt;"webhooks.test.q"&gt;&gt;},
+					{auto_delete, true}
+				]},
+				{routing_key, &lt;&lt;"#"&gt;&gt;}
 			]}
 		]}
-	].
+	]}
+].
 </code></pre>
 
-#### TODO ####
+### TODO ###
 
 Lots and lots still to do:
 
@@ -63,7 +108,7 @@ Lots and lots still to do:
   and several other "would be nice to have"s.
 * Expose various statii to the RabbitMQ console.
 
-#### License ####
+### License ###
 
 Licensed under the Mozilla Public License:
 http://www.rabbitmq.com/mpl.html
