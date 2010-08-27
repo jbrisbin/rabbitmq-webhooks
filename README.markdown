@@ -4,6 +4,12 @@ This plugin provides a "webhook" functionality to a RabbitMQ broker.
 Any message processed by this plugin will be forwarded to the URL 
 you configure, using the method you give it. 
 
+### Changes
+
+0.3 - Asynchronous HTTP send, URL and method overrideable per-message.
+0.2 - URLs can be patterns and headers that start with "X-" get passed to REST URL.
+0.1 - Synchronous HTTP send, no URL patterns. Rough draft.
+
 ### Install from Zip
 
 Download the .tar.gz file from from the downloads section:
