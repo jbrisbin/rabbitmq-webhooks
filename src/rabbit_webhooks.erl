@@ -91,7 +91,8 @@ handle_info({#'basic.deliver'{ delivery_tag=DeliveryTag },
 											 payload=Payload } }, 
             State = #state{ channel=Channel, config=Config }) ->
 	% Transform message headers to HTTP headers
-	HttpHdrs = process_headers(Headers) ++ [
+	[Xhdrs, Params] = process_headers(Headers),
+	HttpHdrs = Xhdrs ++ [
 		{"Content-Type", binary_to_list(ContentType)},
 		{"Accept", ?ACCEPT},
 		{"Accept-Encoding", ?ACCEPT_ENCODING},
@@ -102,18 +103,30 @@ handle_info({#'basic.deliver'{ delivery_tag=DeliveryTag },
 		_ -> [{"X-ReplyTo", binary_to_list(ReplyTo)}]
 	end,
 	
+	% Parameter-replace the URL
+	Url = case proplists:get_value("url", Params) of
+		undefined -> parse_url(Config#webhook.url, Params);
+		NewUrl -> parse_url(NewUrl, Params)
+	end,
+	Method = case proplists:get_value("method", Params) of
+		undefined -> Config#webhook.method;
+		NewMethod -> list_to_atom(string:to_lower(NewMethod))
+	end,
+	
 	% Issue the actual request.
 	% Only process if the server returns 200.
-	case lhttpc:request(Config#webhook.url, Config#webhook.method, HttpHdrs, Payload, infinity) of
+	case lhttpc:request(Url, Method, HttpHdrs, Payload, infinity) of
 		{ok, {{200, _}, Hdrs, Response}} ->
 			% TODO: Place result back on a queue?
 			rabbit_log:debug(" hdrs: ~p~n response: ~p~n", [Hdrs, Response]),
 			case re:run(proplists:get_value("Content-Encoding", Hdrs), "(gzip)", [{capture, [1], list}]) of
 				nomatch ->
-					io:format("plain response: ~p~n", [Response]);
+					rabbit_log:debug("plain response: ~p~n", [Response]),
+					ok;
 				{match, ["gzip"]} ->
 					Content = zlib:gunzip(Response),
-					io:format("gzipped response: ~p~n", [Content])
+					rabbit_log:debug("gzipped response: ~p~n", [Content]),
+					ok
 			end,
 			amqp_channel:call(Channel, #'basic.ack'{ delivery_tag=DeliveryTag });
 		Else ->
@@ -139,8 +152,20 @@ process_headers(Headers) ->
 	lists:foldl(fun (Hdr, AllHdrs) ->
 		case Hdr of
 			{Key, _, Value} ->
-				[{binary_to_list(Key), binary_to_list(Value)} | AllHdrs];
-			{Key, Value} ->
-				[{binary_to_list(Key), binary_to_list(Value)} | AllHdrs]
+				[HttpHdrs, Params] = AllHdrs,
+				case <<Key:2/binary>> of
+					<<"X-">> ->
+						[[{binary_to_list(Key), binary_to_list(Value)} | HttpHdrs], Params];
+					_ ->
+						[HttpHdrs, [{binary_to_list(Key), binary_to_list(Value)} | Params]]
+				end
 		end
-	end, [], Headers).
+	end, [[], []], Headers).
+	
+parse_url(From, Params) ->
+	lists:foldl(fun (P, NewUrl) ->
+		case P of
+			{Param, Value} ->
+				re:replace(NewUrl, io_lib:format("{~s}", [Param]), Value, [{return, list}])
+		end
+	end, From, Params).
