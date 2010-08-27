@@ -4,6 +4,7 @@
 -include("rabbit_webhooks.hrl").
 
 -export([start_link/2]).
+% gen_server callbacks
 -export([
   init/1, 
   handle_call/3, 
@@ -11,6 +12,10 @@
   handle_info/2, 
   terminate/2, 
   code_change/3
+]).
+% Helper methods
+-export([
+	send_request/6
 ]).
 
 -define(REQUESTED_WITH, "RabbitMQ-Webhooks").
@@ -114,24 +119,7 @@ handle_info({#'basic.deliver'{ delivery_tag=DeliveryTag },
 	end,
 	
 	% Issue the actual request.
-	% Only process if the server returns 200.
-	case lhttpc:request(Url, Method, HttpHdrs, Payload, infinity) of
-		{ok, {{200, _}, Hdrs, Response}} ->
-			% TODO: Place result back on a queue?
-			rabbit_log:debug(" hdrs: ~p~n response: ~p~n", [Hdrs, Response]),
-			case re:run(proplists:get_value("Content-Encoding", Hdrs), "(gzip)", [{capture, [1], list}]) of
-				nomatch ->
-					rabbit_log:debug("plain response: ~p~n", [Response]),
-					ok;
-				{match, ["gzip"]} ->
-					Content = zlib:gunzip(Response),
-					rabbit_log:debug("gzipped response: ~p~n", [Content]),
-					ok
-			end,
-			amqp_channel:call(Channel, #'basic.ack'{ delivery_tag=DeliveryTag });
-		Else ->
-			rabbit_log:error("~p", [Else])
-	end,
+	spawn(?MODULE, send_request, [Channel, DeliveryTag, Url, Method, HttpHdrs, Payload]),
 	
   {noreply, State};
 
@@ -169,3 +157,26 @@ parse_url(From, Params) ->
 				re:replace(NewUrl, io_lib:format("{~s}", [Param]), Value, [{return, list}])
 		end
 	end, From, Params).
+	
+send_request(Channel, DeliveryTag, Url, Method, HttpHdrs, Payload) ->
+	% Issue the actual request.
+	case lhttpc:request(Url, Method, HttpHdrs, Payload, infinity) of
+		% Only process if the server returns 200.
+		{ok, {{200, _}, Hdrs, Response}} ->
+			% TODO: Place result back on a queue?
+			rabbit_log:debug(" hdrs: ~p~n response: ~p~n", [Hdrs, Response]),
+			% Check to see if we need to unzip this response
+			case re:run(proplists:get_value("Content-Encoding", Hdrs), "(gzip)", [{capture, [1], list}]) of
+				nomatch ->
+					rabbit_log:debug("plain response: ~p~n", [Response]),
+					ok;
+				{match, ["gzip"]} ->
+					Content = zlib:gunzip(Response),
+					rabbit_log:debug("gzipped response: ~p~n", [Content]),
+					ok
+			end,
+			amqp_channel:call(Channel, #'basic.ack'{ delivery_tag=DeliveryTag });
+		Else ->
+			rabbit_log:error("~p", [Else])
+	end.
+	
