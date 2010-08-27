@@ -129,8 +129,6 @@ An example rabbit.config file is included. Here it is:
 
 Lots and lots still to do:
 
-* Make the URL a pattern rather than a string, to allow for parameter 
-  substitution within the URL.
 * Add error handling so the gen_server doesn't get terminated when the 
   URL is not alive or returns Really Bad Errors.
 * Make message sending more robust, including SSL support, authentication, 
