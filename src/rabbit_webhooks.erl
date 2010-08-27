@@ -12,6 +12,11 @@
   terminate/2, 
   code_change/3
 ]).
+
+-define(REQUESTED_WITH, "RabbitMQ-Webhooks").
+-define(VERSION, "1.0").
+-define(ACCEPT, "application/json;q=.9,text/plain;q=.8,text/xml;q=.6,application/xml;q=.7,text/html;q=.5,*/*;q=.4").
+-define(ACCEPT_ENCODING, "gzip").
             
 -record(state, { channel, config=#webhook{}, queue, consumer }).
 
@@ -27,18 +32,18 @@ init([Config]) ->
     url = proplists:get_value(url, Config),
 		method = proplists:get_value(method, Config),
     exchange = case proplists:get_value(exchange, Config) of
-			[{exchange, Xname} | Xconfig] -> #'exchange.declare' {
-				exchange = Xname,
-				type = proplists:get_value(type, Xconfig, <<"topic">>),
-				auto_delete = proplists:get_value(auto_delete, Xconfig, true),
-				durable = proplists:get_value(durable, Xconfig, false)}
+			[{exchange, Xname} | Xconfig] -> #'exchange.declare'{
+				exchange=Xname,
+				type=proplists:get_value(type, Xconfig, <<"topic">>),
+				auto_delete=proplists:get_value(auto_delete, Xconfig, true),
+				durable=proplists:get_value(durable, Xconfig, false)}
 		end,
 		queue = case proplists:get_value(queue, Config) of
 			% Allow for load-balancing by using named queues (optional)
-			[{queue, Qname} | Qconfig] -> #'queue.declare' {
-				queue = Qname,
-				auto_delete = proplists:get_value(auto_delete, Qconfig, true),
-				durable = proplists:get_value(durable, Qconfig, false)};
+			[{queue, Qname} | Qconfig] -> #'queue.declare'{
+				queue=Qname,
+				auto_delete=proplists:get_value(auto_delete, Qconfig, true),
+				durable=proplists:get_value(durable, Qconfig, false)};
 			% Default to an anonymous queue
 			_ -> #'queue.declare'{ auto_delete=true }
 		end,
@@ -78,13 +83,24 @@ handle_info(#'basic.consume_ok'{ consumer_tag=_Tag }, State) ->
   {noreply, State};
   
 handle_info({#'basic.deliver'{ delivery_tag=DeliveryTag }, 
-						#amqp_msg{ props=#'P_basic'{ content_type=ContentType, headers=Headers }, 
+						#amqp_msg{ props=#'P_basic'{ 
+											   content_type=ContentType, 
+												 headers=Headers, 
+												 reply_to=ReplyTo 
+											 }, 
 											 payload=Payload } }, 
-            State = #state { channel=Channel, config=Config }) ->
+            State = #state{ channel=Channel, config=Config }) ->
 	% Transform message headers to HTTP headers
 	HttpHdrs = process_headers(Headers) ++ [
-		{"Content-Type", binary_to_list(ContentType)}
-	],
+		{"Content-Type", binary_to_list(ContentType)},
+		{"Accept", ?ACCEPT},
+		{"Accept-Encoding", ?ACCEPT_ENCODING},
+		{"X-Requested-With", ?REQUESTED_WITH},
+		{"X-Webhooks-Version", ?VERSION}
+	] ++ case ReplyTo of
+		undefined -> [];
+		_ -> [{"X-ReplyTo", binary_to_list(ReplyTo)}]
+	end,
 	
 	% Issue the actual request.
 	% Only process if the server returns 200.
@@ -92,6 +108,13 @@ handle_info({#'basic.deliver'{ delivery_tag=DeliveryTag },
 		{ok, {{200, _}, Hdrs, Response}} ->
 			% TODO: Place result back on a queue?
 			rabbit_log:debug(" hdrs: ~p~n response: ~p~n", [Hdrs, Response]),
+			case re:run(proplists:get_value("Content-Encoding", Hdrs), "(gzip)", [{capture, [1], list}]) of
+				nomatch ->
+					io:format("plain response: ~p~n", [Response]);
+				{match, ["gzip"]} ->
+					Content = zlib:gunzip(Response),
+					io:format("gzipped response: ~p~n", [Content])
+			end,
 			amqp_channel:call(Channel, #'basic.ack'{ delivery_tag=DeliveryTag });
 		Else ->
 			rabbit_log:error("~p", [Else])
@@ -103,8 +126,8 @@ handle_info(Msg, State) ->
   rabbit_log:warning(" Unkown message: ~p~n State: ~p~n", [Msg, State]),
   {noreply, State}.
   
-terminate(_, #state{channel=Channel, config=_Webhook, queue=_Q, consumer=Tag }) -> 
-	rabbit_log:warning("Terminating ~p ~p~n", [self(), Tag]),
+terminate(_, #state{ channel=Channel, config=_Webhook, queue=_Q, consumer=Tag }) -> 
+	rabbit_log:info("Terminating ~p ~p~n", [self(), Tag]),
 	amqp_channel:call(Channel, #'basic.cancel'{ consumer_tag = Tag }),
   amqp_channel:call(Channel, #'channel.close'{}),
   ok.
