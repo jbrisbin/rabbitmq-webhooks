@@ -161,8 +161,8 @@ parse_url(From, Params) ->
 send_request(Channel, DeliveryTag, Url, Method, HttpHdrs, Payload) ->
 	% Issue the actual request.
 	case lhttpc:request(Url, Method, HttpHdrs, Payload, infinity) of
-		% Only process if the server returns 200.
-		{ok, {{200, _}, Hdrs, Response}} ->
+		% Only process if the server returns 20x.
+		{ok, {{Status, _}, Hdrs, Response}} when Status >= 200 andalso Status < 300 ->
 			% TODO: Place result back on a queue?
 			rabbit_log:debug(" hdrs: ~p~n response: ~p~n", [Hdrs, Response]),
 			% Check to see if we need to unzip this response
