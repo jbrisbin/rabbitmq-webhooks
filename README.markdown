@@ -6,9 +6,10 @@ you configure, using the method you give it.
 
 ### Changes
 
-0.3 - Asynchronous HTTP send, URL and method overrideable per-message.
+<pre><code>0.3 - Asynchronous HTTP send, URL and method overrideable per-message.
 0.2 - URLs can be patterns and headers that start with "X-" get passed to REST URL.
 0.1 - Synchronous HTTP send, no URL patterns. Rough draft.
+</code></pre>
 
 ### Install from Zip
 
