@@ -1,10 +1,31 @@
-## RabbitMQ Webhooks Plugin ##
+## RabbitMQ Webhooks Plugin
 
 This plugin provides a "webhook" functionality to a RabbitMQ broker. 
 Any message processed by this plugin will be forwarded to the URL 
 you configure, using the method you give it. 
 
-### Building ###
+### Install from Zip
+
+Download the .tar.gz file from from the downloads section:
+
+[http://github.com/jbrisbin/rabbitmq-webhooks/downloads](http://github.com/jbrisbin/rabbitmq-webhooks/downloads)
+
+<pre><code>cd $RABBITMQ_HOME
+mkdir plugins
+cd plugins
+tar -zxvf ~/rabbit_webhooks-0.1.tar.gz
+</code></pre>
+
+You should now have three .ez files in your plugins directory:
+
+<pre><code>amqp_client.ez
+lhttpc.ez
+rabbit_webhooks.ez
+</code></pre>
+
+Start your broker and you should see output similar to what's discussed in the "Installing" section.
+
+### Install from Source
 
 You first need to check out and build the public umbrella:
 
@@ -20,7 +41,7 @@ cd rabbitmq-webhooks
 make
 </code></pre>
 
-### Installing ###
+### Installing
 
 To install in the broker that was built from source, copy the required 
 .ez files to the "plugins" directory:
@@ -51,7 +72,7 @@ Configuring Webhooks...done
 
 Logging is done to the server log file.
 
-### Why? ###
+### Why?
 
 If you configure a webhook to bind to exchange "test" with routing key 
 "#", any messages published with that exchange and routing key will be 
@@ -70,7 +91,7 @@ from the queue. If there was an error, the message is NOT ACK'd and stays in
 the queue for possible later delivery. There's probably a better way to handle 
 this. I'm open for suggestions! :)
 
-### Example Configuration ###
+### Example Configuration
 
 An example rabbit.config file is included. Here it is:
 
@@ -97,7 +118,7 @@ An example rabbit.config file is included. Here it is:
 ].
 </code></pre>
 
-### TODO ###
+### TODO
 
 Lots and lots still to do:
 
@@ -109,7 +130,7 @@ Lots and lots still to do:
   and several other "would be nice to have"s.
 * Expose various statii to the RabbitMQ console.
 
-### License ###
+### License
 
 Licensed under the Mozilla Public License:
 
