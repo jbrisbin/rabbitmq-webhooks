@@ -24,7 +24,7 @@
 -define(ACCEPT, "application/json;q=.9,text/plain;q=.8,text/xml;q=.6,application/xml;q=.7,text/html;q=.5,*/*;q=.4").
 -define(ACCEPT_ENCODING, "gzip").
             
--record(state, { channel, config=#webhook{}, queue, consumer }).
+-record(state, { channel, config=#webhook{}, queue, consumer, sent=0 }).
 
 start_link(_Name, Config) ->   
   gen_server:start_link(?MODULE, [Config], []).
@@ -35,25 +35,35 @@ init([Config]) ->
 
 																								% Our configuration
 		Webhook = #webhook {
-			url = proplists:get_value(url, Config),
-			method = proplists:get_value(method, Config),
-			exchange = case proplists:get_value(exchange, Config) of
-										 [{exchange, Xname} | Xconfig] -> #'exchange.declare'{
-											 exchange=Xname,
-											 type=proplists:get_value(type, Xconfig, <<"topic">>),
-											 auto_delete=proplists:get_value(auto_delete, Xconfig, true),
-											 durable=proplists:get_value(durable, Xconfig, false)}
-								 end,
-			queue = case proplists:get_value(queue, Config) of
+			url=proplists:get_value(url, Config),
+			method=proplists:get_value(method, Config),
+			exchange=case proplists:get_value(exchange, Config) of
+									 [{exchange, Xname} | Xconfig] -> #'exchange.declare'{
+										 exchange=Xname,
+										 type=proplists:get_value(type, Xconfig, <<"topic">>),
+										 auto_delete=proplists:get_value(auto_delete, Xconfig, true),
+										 durable=proplists:get_value(durable, Xconfig, false)}
+							 end,
+			queue=case proplists:get_value(queue, Config) of
 																								% Allow for load-balancing by using named queues (optional)
-									[{queue, Qname} | Qconfig] -> 
-											#'queue.declare'{ queue=Qname,
-																				auto_delete=proplists:get_value(auto_delete, Qconfig, true),
-																				durable=proplists:get_value(durable, Qconfig, false)};
+								[{queue, Qname} | Qconfig] -> 
+										#'queue.declare'{ queue=Qname,
+																			auto_delete=proplists:get_value(auto_delete, Qconfig, true),
+																			durable=proplists:get_value(durable, Qconfig, false)};
 																								% Default to an anonymous queue
-									_ -> #'queue.declare'{ auto_delete=true }
-							end,
-			routing_key = proplists:get_value(routing_key, Config)},
+								_ -> #'queue.declare'{ auto_delete=true }
+						end,
+			routing_key=proplists:get_value(routing_key, Config),
+			max_send=case proplists:get_value(max_send, Config) of
+									 {Max, second} -> {second, Max, erlang:round(1000 / Max)};
+									 {Max, minute} -> {minute, Max, erlang:round(60000 / Max)};
+									 {Max, hour} -> {hour, Max, erlang:round(3600000 / Max)};
+									 {Max, day} -> {day, Max, erlang:round(86400000 / Max)};
+									 {Max, week} -> {week, Max, erlang:round(604800000 / Max)};
+									 {_, Freq} -> 
+											 io:format("Invalid frequency: ~p~n", [Freq]),
+											 invalid
+							 end},
 
 																								% Declare exchange
 		#'exchange.declare_ok'{} = amqp_channel:call(Channel, Webhook#webhook.exchange),
@@ -68,22 +78,25 @@ init([Config]) ->
 		#'queue.bind_ok'{} = amqp_channel:call(Channel, QueueBind),
 
 																								% Subscribe to these events
-		{_, State} = handle_cast(subscribe, #state{ channel=Channel, config=Webhook, queue=Q }),
-
-		{ok, State}.
+		{_, State} = handle_info(subscribe, #state{ channel=Channel, config=Webhook, queue=Q }),
+ 		{ok, State}.
 
 handle_call(_Msg, _From, State = #state{ channel=_Channel, config=_Config }) ->
 		{noreply, State}.
 
-handle_cast(subscribe, State=#state{ channel=Channel, queue=Q }) ->
+handle_cast(cancel, State=#state{ channel=Channel, consumer=Tag }) ->
+		rabbit_log:info("Cancelling consumer ~p", [Tag]),
+		amqp_channel:call(Channel, #'basic.cancel'{ consumer_tag = Tag }),
+		{noreply, State}.
+
+handle_info(subscribe, State=#state{ channel=Channel, queue=Q }) ->
 		#'basic.consume_ok'{ consumer_tag=Tag } = amqp_channel:subscribe(Channel, 
 																																		 #'basic.consume'{ queue=Q, no_ack=false}, 
 																																		 self()),
 		{noreply, State#state{ consumer=Tag }};
 
-handle_cast(cancel, State=#state{ channel=Channel, consumer=Tag }) ->
-		amqp_channel:call(Channel, #'basic.cancel'{ consumer_tag = Tag }),
-		{noreply, State}.
+handle_info(#'basic.cancel_ok'{}, State) ->
+		{noreply, State};
 
 handle_info(#'basic.consume_ok'{ consumer_tag=_Tag }, State) ->
 		{noreply, State};
@@ -123,7 +136,18 @@ handle_info({#'basic.deliver'{ delivery_tag=DeliveryTag },
 							send_request(Channel, DeliveryTag, Url, Method, HttpHdrs, Payload) 
 			end),
 
-		{noreply, State};
+		Sent = State#state.sent + 1,
+		NewState = case Config#webhook.max_send of
+									 infinity -> 
+											 State#state{ sent=Sent };
+									 {_, Max, _} when Sent < Max -> 
+											 State#state{ sent=Sent };
+									 {_, _, Delay} -> 
+											 timer:sleep(Delay),
+											 State#state{ sent=0 }
+							 end,
+
+		{noreply, NewState};
 
 handle_info(Msg, State) ->
 		rabbit_log:warning(" Unkown message: ~p~n State: ~p~n", [Msg, State]),
@@ -168,13 +192,13 @@ send_request(Channel, DeliveryTag, Url, Method, HttpHdrs, Payload) ->
 																								% TODO: Place result back on a queue?
 						rabbit_log:debug(" hdrs: ~p~n response: ~p~n", [Hdrs, Response]),
 																								% Check to see if we need to unzip this response
-						case re:run(proplists:get_value("Content-Encoding", Hdrs), "(gzip)", [{capture, [1], list}]) of
+						case re:run(proplists:get_value("Content-Encoding", Hdrs, ""), "(gzip)", [{capture, [1], list}]) of
 								nomatch ->
-										rabbit_log:debug("plain response: ~p~n", [Response]),
+																								%rabbit_log:debug("plain response: ~p~n", [Response]),
 										ok;
 								{match, ["gzip"]} ->
-										Content = zlib:gunzip(Response),
-										rabbit_log:debug("gzipped response: ~p~n", [Content]),
+										_Content = zlib:gunzip(Response),
+																								%rabbit_log:debug("gzipped response: ~p~n", [Content]),
 										ok
 						end,
 						amqp_channel:call(Channel, #'basic.ack'{ delivery_tag=DeliveryTag });
