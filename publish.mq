@@ -2,25 +2,14 @@ mq.on error: {err ->
   err.printStackTrace()
 }
 
-mq.exchange(name: "webhooks.test", type: "topic", durable: false, autoDelete: true) {
-  queue(routingKey: "test.key") {
-	  publish testParam: "testValue", body: { msg, out ->
-			msg.properties.contentType = "application/json"
-			msg.properties.replyTo = "reply.q"
-			msg.properties.headers["X-Special-Header"] = "special_value"
-			out.write("""{"test":"value","number":1}""".bytes)
-		}
-		
-	  publish testParam: "testValue", url: "http://localhost:8000/rest/{testParam}", body: { msg, out ->
-			msg.properties.contentType = "application/json"
-			msg.properties.replyTo = "reply.q"
-			out.write("""{"test":"value","number":2}""".bytes)
-		}
-
-    publish testParam: "testValue", url: "http://localhost:8000/rest/{testParam}", method: "put", body: { msg, out ->
-			msg.properties.contentType = "application/json"
-			msg.properties.replyTo = "reply.q"
-			out.write("""{"test":"value","number":3}""".bytes)
-		}
+mq.exchange(name: "webhooks.test", type: "topic", durable: true, autoDelete: false) {
+  queue(name: "webhooks.test.q", durable: true, autoDelete: false, routingKey: "test.key") {
+		for(i=0; i<10; i++) {
+  	  publish id: "", method: "post", body: { msg, out ->
+	  		msg.properties.contentType = "application/json"
+		  	msg.properties.headers["X-Special-Header"] = "special_value"
+			  out.write("""{"test":"value","number":2}""".bytes)
+		  }
+		}		
   }
 }

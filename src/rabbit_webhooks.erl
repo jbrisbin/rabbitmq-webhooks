@@ -23,8 +23,13 @@
 -define(VERSION, "1.0").
 -define(ACCEPT, "application/json;q=.9,text/plain;q=.8,text/xml;q=.6,application/xml;q=.7,text/html;q=.5,*/*;q=.4").
 -define(ACCEPT_ENCODING, "gzip").
-            
--record(state, { channel, config=#webhook{}, queue, consumer, sent=0 }).
+-define(SEC_MSEC, 1000).
+-define(MIN_MSEC, 60000).
+-define(HOUR_MSEC, 3600000).
+-define(DAY_MSEC, 86400000).
+-define(WEEK_MSEC, 604800000).
+
+-record(state, { channel, config=#webhook{}, queue, consumer, sent=0, mark }).
 
 start_link(_Name, Config) ->   
   gen_server:start_link(?MODULE, [Config], []).
@@ -55,11 +60,11 @@ init([Config]) ->
 						end,
 			routing_key=proplists:get_value(routing_key, Config),
 			max_send=case proplists:get_value(max_send, Config) of
-									 {Max, second} -> {second, Max, erlang:round(1000 / Max)};
-									 {Max, minute} -> {minute, Max, erlang:round(60000 / Max)};
-									 {Max, hour} -> {hour, Max, erlang:round(3600000 / Max)};
-									 {Max, day} -> {day, Max, erlang:round(86400000 / Max)};
-									 {Max, week} -> {week, Max, erlang:round(604800000 / Max)};
+									 {Max, second} -> {second, Max, ?SEC_MSEC};
+									 {Max, minute} -> {minute, Max, ?MIN_MSEC};
+									 {Max, hour} -> {hour, Max, ?HOUR_MSEC};
+									 {Max, day} -> {day, Max, ?DAY_MSEC};
+									 {Max, week} -> {week, Max, ?WEEK_MSEC};
 									 {_, Freq} -> 
 											 io:format("Invalid frequency: ~p~n", [Freq]),
 											 invalid
@@ -78,22 +83,19 @@ init([Config]) ->
 		#'queue.bind_ok'{} = amqp_channel:call(Channel, QueueBind),
 
 																								% Subscribe to these events
-		{_, State} = handle_info(subscribe, #state{ channel=Channel, config=Webhook, queue=Q }),
- 		{ok, State}.
-
-handle_call(_Msg, _From, State = #state{ channel=_Channel, config=_Config }) ->
-		{noreply, State}.
-
-handle_cast(cancel, State=#state{ channel=Channel, consumer=Tag }) ->
-		rabbit_log:info("Cancelling consumer ~p", [Tag]),
-		amqp_channel:call(Channel, #'basic.cancel'{ consumer_tag = Tag }),
-		{noreply, State}.
-
-handle_info(subscribe, State=#state{ channel=Channel, queue=Q }) ->
 		#'basic.consume_ok'{ consumer_tag=Tag } = amqp_channel:subscribe(Channel, 
 																																		 #'basic.consume'{ queue=Q, no_ack=false}, 
 																																		 self()),
-		{noreply, State#state{ consumer=Tag }};
+ 		{ok, #state{ channel=Channel, config=Webhook, queue=Q, consumer=Tag, mark=get_time() }}.
+
+handle_call(Msg, _From, State = #state{ channel=_Channel, config=_Config }) ->
+		rabbit_log:warning(" Unkown call: ~p~n State: ~p~n", [Msg, State]),
+		{noreply, State}.
+
+handle_cast(Msg, State=#state{ channel=_Channel, config=_Config }) ->
+		rabbit_log:warning(" Unkown cast: ~p~n State: ~p~n", [Msg, State]),
+																								%amqp_channel:call(Channel, #'basic.cancel'{ consumer_tag = Tag }),
+		{noreply, State}.
 
 handle_info(#'basic.cancel_ok'{}, State) ->
 		{noreply, State};
@@ -161,6 +163,10 @@ terminate(_, #state{ channel=Channel, config=_Webhook, queue=_Q, consumer=Tag })
 
 code_change(_OldVsn, State, _Extra) -> 
   {ok, State}.
+
+get_time() ->
+		{Msec, Sec, Misecs} = now(),
+		Misecs + (1000 * Sec) + (Msec * 1000000).
 
 process_headers(Headers) ->
 		lists:foldl(fun (Hdr, AllHdrs) ->

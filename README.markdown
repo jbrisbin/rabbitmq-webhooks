@@ -6,12 +6,17 @@ you configure, using the method you give it.
 
 ### Changes
 
-<pre><code>0.5 - Use RabbitMQ's worker_pool for sending requests to handle massive dumps of messages
+<pre><code>0.6 - Added max_send config param for limiting how many outgoing HTTP requests happen
+0.5 - Use RabbitMQ's worker_pool for sending requests to handle massive dumps of messages
 0.4 - Accept more than just 200 status code for CouchDB
 0.3 - Asynchronous HTTP send, URL and method overrideable per-message.
 0.2 - URLs can be patterns and headers that start with "X-" get passed to REST URL.
 0.1 - Synchronous HTTP send, no URL patterns. Rough draft.
 </code></pre>
+
+### Be Careful!
+
+If you misconfigured the webhooks plugin or the URL you configure isn't accessible when the webhooks plugin tries to access it, it will kill your broker. On the TODO list is robust error handling that will take care of this for you. But keep in mind that this is still fairly untested code. It works fine, it's just not very forgiving of user error.
 
 ### Install from Zip
 
@@ -120,7 +125,8 @@ An example rabbit.config file is included. Here it is:
 					{queue, &lt;&lt;"webhooks.test.q"&gt;&gt;},
 					{auto_delete, true}
 				]},
-				{routing_key, &lt;&lt;"#"&gt;&gt;}
+				{routing_key, &lt;&lt;"#"&gt;&gt;},
+        {max_send, {5, second}}
 			]}
 		]}
 	]}
