@@ -6,7 +6,8 @@ you configure, using the method you give it.
 
 ### Changes
 
-<pre><code>0.6 - Added max_send config param for limiting how many outgoing HTTP requests happen
+<pre><code>0.7 - Added send window functionality for sending webhook requests only during specified time windows
+0.6 - Added max_send config param for limiting how many outgoing HTTP requests happen
 0.5 - Use RabbitMQ's worker_pool for sending requests to handle massive dumps of messages
 0.4 - Accept more than just 200 status code for CouchDB
 0.3 - Asynchronous HTTP send, URL and method overrideable per-message.
@@ -27,7 +28,7 @@ Download the .tar.gz file from from the downloads section:
 <pre><code>cd $RABBITMQ_HOME
 mkdir plugins
 cd plugins
-tar -zxvf ~/rabbit_webhooks-0.1.tar.gz
+tar -zxvf ~/rabbit_webhooks-0.x.tar.gz
 </code></pre>
 
 You should now have three .ez files in your plugins directory:
