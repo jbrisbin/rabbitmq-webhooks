@@ -127,7 +127,8 @@ An example rabbit.config file is included. Here it is:
 					{auto_delete, true}
 				]},
 				{routing_key, &lt;&lt;"#"&gt;&gt;},
-        {max_send, {5, second}}
+				{max_send, {5, second}},
+				{send_if, [{between, {13, 24}, {13, 25}}]}
 			]}
 		]}
 	]}
