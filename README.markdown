@@ -18,7 +18,7 @@ you configure, using the method you give it.
 
 ### Be Careful!
 
-If you misconfigured the webhooks plugin or the URL you configure isn't accessible when the webhooks plugin tries to access it, it will kill your broker. On the TODO list is robust error handling that will take care of this for you. But keep in mind that this is still fairly untested code. It works fine, it's just not very forgiving of user error.
+If you misconfigure the webhooks plugin it will likely kill your broker. On the TODO list is robust error handling that will take care of this for you. But keep in mind that this is still fairly untested code. It works fine, it's just not very forgiving.
 
 ### Install from Zip
 
