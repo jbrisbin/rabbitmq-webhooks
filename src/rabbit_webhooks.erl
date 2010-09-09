@@ -67,7 +67,8 @@ init([Config]) ->
 									 {Max, week} -> {week, Max, ?WEEK_MSEC};
 									 {_, Freq} -> 
 											 io:format("Invalid frequency: ~p~n", [Freq]),
-											 invalid
+											 invalid;
+									 _ -> infinity
 							 end,
 			send_if=proplists:get_value(send_if, Config, always)},
 
@@ -256,7 +257,10 @@ process_headers(Headers) ->
 																				[HttpHdrs, [{binary_to_list(Key), binary_to_list(Value)} | Params]]
 																end
 												end
-								end, [[], []], Headers).
+								end, [[], []], case Headers of
+																	 undefined -> [];
+																	 Else -> Else
+															 end).
 	
 parse_url(From, Params) ->
 		lists:foldl(fun (P, NewUrl) ->
@@ -267,24 +271,26 @@ parse_url(From, Params) ->
 								end, From, Params).
 	
 send_request(Channel, DeliveryTag, Url, Method, HttpHdrs, Payload) ->
+		try
 																								% Issue the actual request.
-		case lhttpc:request(Url, Method, HttpHdrs, Payload, infinity) of
+				case lhttpc:request(Url, Method, HttpHdrs, Payload, infinity) of
 																								% Only process if the server returns 20x.
-				{ok, {{Status, _}, Hdrs, Response}} when Status >= 200 andalso Status < 300 ->
+						{ok, {{Status, _}, Hdrs, Response}} when Status >= 200 andalso Status < 300 ->
 																								% TODO: Place result back on a queue?
-						rabbit_log:debug(" hdrs: ~p~n response: ~p~n", [Hdrs, Response]),
+								rabbit_log:debug(" hdrs: ~p~n response: ~p~n", [Hdrs, Response]),
 																								% Check to see if we need to unzip this response
-						case re:run(proplists:get_value("Content-Encoding", Hdrs, ""), "(gzip)", [{capture, [1], list}]) of
-								nomatch ->
+								case re:run(proplists:get_value("Content-Encoding", Hdrs, ""), "(gzip)", [{capture, [1], list}]) of
+										nomatch ->
 																								%rabbit_log:debug("plain response: ~p~n", [Response]),
-										ok;
-								{match, ["gzip"]} ->
-										_Content = zlib:gunzip(Response),
+												ok;
+										{match, ["gzip"]} ->
+												_Content = zlib:gunzip(Response),
 																								%rabbit_log:debug("gzipped response: ~p~n", [Content]),
-										ok
-						end,
-						amqp_channel:call(Channel, #'basic.ack'{ delivery_tag=DeliveryTag });
-				Else ->
-						rabbit_log:error("~p", [Else])
-		end.
+												ok
+								end,
+								amqp_channel:call(Channel, #'basic.ack'{ delivery_tag=DeliveryTag });
+						Else ->
+								rabbit_log:error("~p", [Else])
+				end
+		catch Ex -> rabbit_log:error("Error requesting ~p: ~p~n", [Url, Ex]) end.
 	
