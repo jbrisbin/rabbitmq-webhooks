@@ -80,7 +80,7 @@ init([Config]) ->
 
 																								% Bind queue
 		QueueBind = #'queue.bind'{ queue=Q,
-															 exchange=Webhook#webhook.exchange#'exchange.declare'.exchange,
+															 exchange=(Webhook#webhook.exchange)#'exchange.declare'.exchange,
 															 routing_key=Webhook#webhook.routing_key},
 		#'queue.bind_ok'{} = amqp_channel:call(Channel, QueueBind),
 
