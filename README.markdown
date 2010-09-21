@@ -6,7 +6,8 @@ you configure, using the method you give it.
 
 ### Changes
 
-<pre><code>0.8 - Added error handling for request so bad URLs don't crash broker, fix for no message headers
+<pre><code>0.9 - Incorporated patch from @cameronharris for OTP R13 compatibility, Makefile tweak
+0.8 - Added error handling for request so bad URLs don't crash broker, fix for no message headers
 0.7 - Added send window functionality for sending webhook requests only during specified time windows
 0.6 - Added max_send config param for limiting how many outgoing HTTP requests happen
 0.5 - Use RabbitMQ's worker_pool for sending requests to handle massive dumps of messages
