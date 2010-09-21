@@ -4,12 +4,9 @@ mq.on error: {err ->
 
 mq.exchange(name: "webhooks.test", type: "topic", durable: true, autoDelete: false) {
   queue(name: "webhooks.test.q", durable: true, autoDelete: false, routingKey: "test.key") {
-		for(i=0; i<10; i++) {
-  	  publish id: "", method: "post", body: { msg, out ->
-	  		msg.properties.contentType = "application/json"
-		  	msg.properties.headers["X-Special-Header"] = "special_value"
-			  out.write("""{"test":"value","number":2}""".bytes)
-		  }
-		}		
+ 	  publish id: "", method: "post", body: { msg, out ->
+  		msg.properties.contentType = "application/json"
+		  out.write("""1""".bytes)
+	  }
   }
 }

@@ -176,12 +176,13 @@ handle_info({#'basic.deliver'{ delivery_tag=DeliveryTag },
 													content_type=ContentType, 
 													headers=Headers, 
 													reply_to=ReplyTo}, 
-												payload=Payload } }, 
+												payload=Payload }=Msg }, 
             State=#state{ channel=Channel, config=Config }) ->
 
+		rabbit_log:debug("msg: ~p~n", [Msg]),
 																								% Transform message headers to HTTP headers
 		[Xhdrs, Params] = process_headers(Headers),
-		HttpHdrs = Xhdrs ++ [{"Content-Type", binary_to_list(ContentType)},
+		HttpHdrs = try Xhdrs ++ [{"Content-Type", binary_to_list(ContentType)},
 												 {"Accept", ?ACCEPT},
 												 {"Accept-Encoding", ?ACCEPT_ENCODING},
 												 {"X-Requested-With", ?REQUESTED_WITH},
@@ -189,7 +190,10 @@ handle_info({#'basic.deliver'{ delivery_tag=DeliveryTag },
 												] ++ case ReplyTo of
 																 undefined -> [];
 																 _ -> [{"X-ReplyTo", binary_to_list(ReplyTo)}]
-														 end,
+														 end
+								catch 
+									Ex -> rabbit_log:error("Error creating headaers: ~p~n", [Ex])
+								end,
 
 																								% Parameter-replace the URL
 		Url = case proplists:get_value("url", Params) of
