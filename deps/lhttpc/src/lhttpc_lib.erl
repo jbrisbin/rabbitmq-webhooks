@@ -25,20 +25,24 @@
 %%% ----------------------------------------------------------------------------
 
 %%% @private
-%%% @author Oscar HellstrÃ¶m <oscar@erlang-consulting.com>
+%%% @author Oscar Hellström <oscar@hellstrom.st>
 %%% @doc
 %%% This module implements various library functions used in lhttpc.
 %%% @end
+%%% @type boolean() = boolean().
+%%% @type iolist() = [] | binary() | [char() | binary() | iolist()].
 -module(lhttpc_lib).
 
 -export([
         parse_url/1,
-        format_request/6,
+        format_request/7,
         header_value/2,
         header_value/3,
         normalize_method/1
     ]).
 -export([maybe_atom_to_list/1]).
+
+-export([format_hdrs/1, dec/1]).
 
 -include("lhttpc_types.hrl").
 
@@ -95,9 +99,9 @@ maybe_atom_to_list(List) when is_list(List) ->
 %%   Host = string()
 %%   Port = integer()
 %%   Path = string()
-%%   Ssl = bool()
+%%   Ssl = boolean()
 %% @doc
--spec parse_url(string()) -> {string(), integer(), string(), bool()}.
+-spec parse_url(string()) -> {string(), integer(), string(), boolean()}.
 parse_url(URL) ->
     % XXX This should be possible to do with the re module?
     {Scheme, HostPortPath} = split_scheme(URL),
@@ -134,21 +138,27 @@ split_port(_,[$/ | _] = Path, Port) ->
 split_port(Scheme, [P | T], Port) ->
     split_port(Scheme, T, [P | Port]).
 
-%% @spec (Path, Method, Headers, Host, Port, Body) -> Request
+%% @spec (Path, Method, Headers, Host, Port, Body, PartialUpload) -> Request
 %% Path = iolist()
 %% Method = atom() | string()
 %% Headers = [{atom() | string(), string()}]
 %% Host = string()
 %% Port = integer()
 %% Body = iolist()
+%% PartialUpload = true | false
 -spec format_request(iolist(), atom() | string(), headers(), string(),
-    integer(), iolist()) -> iolist().
-format_request(Path, Method, Hdrs, Host, Port, Body) ->
-    [
-        Method, " ", Path, " HTTP/1.1\r\n",
-        format_hdrs(add_mandatory_hdrs(Method, Hdrs, Host, Port, Body), []),
-        Body
-    ].
+    integer(), iolist(), true | false ) -> {true | false, iolist()}.
+format_request(Path, Method, Hdrs, Host, Port, Body, PartialUpload) ->
+    AllHdrs = add_mandatory_hdrs(Method, Hdrs, Host, Port, Body, PartialUpload),
+    IsChunked = is_chunked(AllHdrs),
+    {
+        IsChunked,
+        [
+            Method, " ", Path, " HTTP/1.1\r\n",
+            format_hdrs(AllHdrs),
+            format_body(Body, IsChunked)
+        ]
+    }.
 
 %% @spec normalize_method(AtomOrString) -> Method
 %%   AtomOrString = atom() | string()
@@ -163,6 +173,10 @@ normalize_method(Method) when is_atom(Method) ->
 normalize_method(Method) ->
     Method.
 
+-spec format_hdrs(headers()) -> iolist().
+format_hdrs(Headers) ->
+    format_hdrs(Headers, []).
+
 format_hdrs([{Hdr, Value} | T], Acc) ->
     NewAcc = [
         maybe_atom_to_list(Hdr), ":", maybe_atom_to_list(Value), "\r\n" | Acc
@@ -171,23 +185,52 @@ format_hdrs([{Hdr, Value} | T], Acc) ->
 format_hdrs([], Acc) ->
     [Acc, "\r\n"].
 
-add_mandatory_hdrs(Method, Hdrs, Host, Port, Body) ->
-    add_host(add_content_length(Method, Hdrs, Body), Host, Port).
+format_body(Body, false) ->
+    Body;
+format_body(Body, true) ->
+    case iolist_size(Body) of
+        0 ->
+            <<>>;
+        Size ->
+            [
+                erlang:integer_to_list(Size, 16), <<"\r\n">>,
+                Body, <<"\r\n">>
+            ]
+    end.
 
-add_content_length("POST", Hdrs, Body) ->
-    add_content_length(Hdrs, Body);
-add_content_length("PUT", Hdrs, Body) ->
-    add_content_length(Hdrs, Body);
-add_content_length(_, Hdrs, _) ->
+add_mandatory_hdrs(Method, Hdrs, Host, Port, Body, PartialUpload) ->
+    ContentHdrs = add_content_headers(Method, Hdrs, Body, PartialUpload),  
+    add_host(ContentHdrs, Host, Port).
+
+add_content_headers("POST", Hdrs, Body, PartialUpload) ->
+    add_content_headers(Hdrs, Body, PartialUpload);
+add_content_headers("PUT", Hdrs, Body, PartialUpload) ->
+    add_content_headers(Hdrs, Body, PartialUpload);
+add_content_headers(_, Hdrs, _, _PartialUpload) ->
     Hdrs.
 
-add_content_length(Hdrs, Body) ->
+add_content_headers(Hdrs, Body, false) ->
     case header_value("content-length", Hdrs) of
         undefined ->
             ContentLength = integer_to_list(iolist_size(Body)),
             [{"Content-Length", ContentLength} | Hdrs];
         _ -> % We have a content length
             Hdrs
+    end;
+add_content_headers(Hdrs, _Body, true) ->
+    case {header_value("content-length", Hdrs), 
+         header_value("transfer-encoding", Hdrs)} of
+        {undefined, undefined} ->
+            [{"Transfer-Encoding", "chunked"} | Hdrs];
+        {undefined, TransferEncoding} ->
+            case string:to_lower(TransferEncoding) of
+            "chunked" -> Hdrs;
+            _ -> erlang:error({error, unsupported_transfer_encoding})
+            end;
+        {_Length, undefined} ->
+            Hdrs;
+        {_Length, _TransferEncoding} -> %% have both cont.length and chunked 
+            erlang:error({error, bad_header})
     end.
 
 add_host(Hdrs, Host, Port) ->
@@ -197,6 +240,18 @@ add_host(Hdrs, Host, Port) ->
         _ -> % We have a host
             Hdrs
     end.
+
+is_chunked(Hdrs) ->
+    TransferEncoding = string:to_lower(
+        header_value("transfer-encoding", Hdrs, "undefined")),
+    case TransferEncoding of
+        "chunked" -> true;
+        _ -> false
+    end.
+
+-spec dec(timeout()) -> timeout().
+dec(Num) when is_integer(Num) -> Num - 1;
+dec(Else)                     -> Else.
 
 host(Host, 80)   -> Host;
 host(Host, Port) -> [Host, $:, integer_to_list(Port)].

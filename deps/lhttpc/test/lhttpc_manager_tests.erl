@@ -24,7 +24,7 @@
 %%% ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %%% ----------------------------------------------------------------------------
 
-%%% @author Oscar HellstrÃ¶m <oscar@erlang-consulting.com>
+%%% @author Oscar Hellström <oscar@hellstrom.st>
 -module(lhttpc_manager_tests).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -37,6 +37,7 @@
 
 start_app() ->
     ok = application:start(crypto),
+    application:start(public_key),
     ok = application:start(ssl),
     ok = application:start(lhttpc).
 
@@ -46,17 +47,19 @@ stop_app(_) ->
     ok = application:stop(crypto).
 
 manager_test_() ->
-    {setup, fun start_app/0, fun stop_app/1, [
-            ?_test(empty_manager()),
-            ?_test(one_socket()),
-            ?_test(many_sockets()),
-            ?_test(closed_race_cond())
-        ]}.
+    {inorder,
+        {setup, fun start_app/0, fun stop_app/1, [
+                ?_test(empty_manager()),
+                ?_test(one_socket()),
+                ?_test(many_sockets()),
+                ?_test(closed_race_cond())
+            ]}
+    }.
 
 %%% Tests
 
 empty_manager() ->
-    ?assertEqual(no_socket,  gen_server:call(lhttpc_manager,
+    ?assertEqual(no_socket, gen_server:call(lhttpc_manager,
             {socket, self(), ?HOST, ?PORT, ?SSL})).
 
 one_socket() ->
@@ -72,10 +75,10 @@ one_socket() ->
 many_sockets() ->
     {LS, Socket1} = socket_server:open(),
     {ok, Port} = inet:port(LS),
-    socket_server:accept(LS),
-    socket_server:accept(LS),
-    Socket2 = socket_server:connect(Port),
-    Socket3 = socket_server:connect(Port),
+    Pid2 = socket_server:accept(LS),
+    Pid3 = socket_server:accept(LS),
+    Socket2 = socket_server:connect(Pid2, Port),
+    Socket3 = socket_server:connect(Pid3, Port),
     gen_tcp:close(LS),
     give_away(Socket1, ?HOST, ?PORT, ?SSL),
     give_away(Socket2, ?HOST, ?PORT, ?SSL),

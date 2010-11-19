@@ -24,15 +24,27 @@
 %%% ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %%% ----------------------------------------------------------------------------
 
-%%% @author Oscar HellstrÃ¶m <oscar@erlang-consulting.com>
+%%% @author Oscar Hellström <oscar@hellstrom.st>
 %%% @doc Main interface to the lightweight http client.
 %%% See {@link request/4}, {@link request/5} and {@link request/6} functions.
 %%% @end
+%%% @type boolean() = bool().
+%%% @type iolist() = [] | binary() | [char() | binary() | iolist()].
 -module(lhttpc).
 -behaviour(application).
 
--export([request/4, request/5, request/6, request/9]).
+-export([start/0, stop/0, request/4, request/5, request/6, request/9]).
 -export([start/2, stop/1]).
+-export([
+        send_body_part/2,
+        send_body_part/3, 
+        send_trailers/2,
+        send_trailers/3
+    ]).
+-export([
+        get_body_part/1,
+        get_body_part/2
+        ]).
 
 -include("lhttpc_types.hrl").
 
@@ -58,6 +70,33 @@ start(_, _) ->
 stop(_) ->
     ok.
 
+%% @spec () -> ok | {error, Reason}
+%%   Reason = term()
+%% @doc
+%% Start the application.
+%% This is a helper function that will call `application:start(lhttpc)' to
+%% allow the library to be started using the `-s' flag.
+%% For instance:
+%% `$ erl -s crypto -s ssl -s lhttpc'
+%%
+%% For more info on possible return values the `application' module.
+%% @end
+-spec start() -> ok | {error, any()}.
+start() ->
+    application:start(lhttpc).
+
+%% @spec () -> ok | {error, Reason}
+%%   Reason = term()
+%% @doc
+%% Stops the application.
+%% This is a helper function that will call `application:stop(lhttpc)'.
+%%
+%% For more info on possible return values the `application' module.
+%% @end
+-spec stop() -> ok | {error, any()}.
+stop() ->
+    application:stop(lhttpc).
+
 %% @spec (URL, Method, Hdrs, Timeout) -> Result
 %%   URL = string()
 %%   Method = string() | atom()
@@ -72,9 +111,11 @@ stop(_) ->
 %%   ResponseBody = binary()
 %%   Reason = connection_closed | connect_timeout | timeout
 %% @doc Sends a request without a body.
-%% Would be the same as calling `request(URL, Method, Hdrs, [], Timeout)',
-%% that is {@link request/5} with an empty body (`Body' could also be `<<>>').
+%% Would be the same as calling {@link request/5} with an empty body,
+%% `request(URL, Method, Hdrs, [], Timeout)' or
+%% `request(URL, Method, Hdrs, <<>>, Timeout)'.
 %% @end
+%% @see request/9
 -spec request(string(), string() | atom(), headers(), pos_integer() |
         infinity) -> result().
 request(URL, Method, Hdrs, Timeout) ->
@@ -95,10 +136,10 @@ request(URL, Method, Hdrs, Timeout) ->
 %%   ResponseBody = binary()
 %%   Reason = connection_closed | connect_timeout | timeout
 %% @doc Sends a request with a body.
-%% Would be the same as calling
-%% `request(URL, Method, Hdrs, Body, Timeout, [])', that is {@link request/6} with
-%% no options.
+%% Would be the same as calling {@link request/6} with no options,
+%% `request(URL, Method, Hdrs, Body, Timeout, [])'.
 %% @end
+%% @see request/9
 -spec request(string(), string() | atom(), headers(), iolist(),
         pos_integer() | infinity) -> result().
 request(URL, Method, Hdrs, Body, Timeout) ->
@@ -114,10 +155,19 @@ request(URL, Method, Hdrs, Body, Timeout) ->
 %%   Timeout = integer() | infinity
 %%   Options = [Option]
 %%   Option = {connect_timeout, Milliseconds | infinity} |
-%%            {send_retry, integer()}
+%%            {connect_options, [ConnectOptions]} |
+%%            {send_retry, integer()} |
+%%            {partial_upload, WindowSize} |
+%%            {partial_download, PartialDownloadOptions}
 %%   Milliseconds = integer()
-%%   Result = {ok, {{StatusCode, ReasonPhrase}, Hdrs, ResponseBody}}
-%%            | {error, Reason}
+%%   ConnectOptions = term()
+%%   WindowSize = integer() | infinity
+%%   PartialDownloadOptions = [PartialDownloadOption]
+%%   PartialDowloadOption = {window_size, WindowSize} |
+%%                          {part_size, PartSize}
+%%   PartSize = integer() | infinity
+%%   Result = {ok, {{StatusCode, ReasonPhrase}, Hdrs, ResponseBody}} |
+%%            {ok, UploadState} | {error, Reason}
 %%   StatusCode = integer()
 %%   ReasonPhrase = string()
 %%   ResponseBody = binary()
@@ -131,6 +181,7 @@ request(URL, Method, Hdrs, Body, Timeout) ->
 %% `URL' is expected to be a valid URL: 
 %% `scheme://host[:port][/path]'.
 %% @end
+%% @see request/9
 -spec request(string(), string() | atom(), headers(), iolist(),
         pos_integer() | infinity, [option()]) -> result().
 request(URL, Method, Hdrs, Body, Timeout, Options) ->
@@ -151,13 +202,21 @@ request(URL, Method, Hdrs, Body, Timeout, Options) ->
 %%   Timeout = integer() | infinity
 %%   Options = [Option]
 %%   Option = {connect_timeout, Milliseconds | infinity} |
-%%            {send_retry, integer()}
+%%            {connect_options, [ConnectOptions]} |
+%%            {send_retry, integer()} |
+%%            {partial_upload, WindowSize} |
+%%            {partial_download, PartialDownloadOptions}
 %%   Milliseconds = integer()
+%%   WindowSize = integer()
+%%   PartialDownloadOptions = [PartialDownloadOption]
+%%   PartialDowloadOption = {window_size, WindowSize} |
+%%                          {part_size, PartSize}
+%%   PartSize = integer() | infinity
 %%   Result = {ok, {{StatusCode, ReasonPhrase}, Hdrs, ResponseBody}}
-%%            | {error, Reason}
+%%          | {error, Reason}
 %%   StatusCode = integer()
 %%   ReasonPhrase = string()
-%%   ResponseBody = binary()
+%%   ResponseBody = binary() | pid() | undefined
 %%   Reason = connection_closed | connect_timeout | timeout
 %% @doc Sends a request with a body.
 %%
@@ -173,12 +232,17 @@ request(URL, Method, Hdrs, Body, Timeout, Options) ->
 %% 
 %% `Method' is either a string, stating the HTTP method exactly as in the
 %% protocol, i.e: `"POST"' or `"GET"'. It could also be an atom, which is
-%% then made in to uppercase, if it isn't already.
+%% then coverted to an uppercase (if it isn't already) string.
+%%
 %% `Hdrs' is a list of headers to send. Mandatory headers such as
-%% `Host' or `Content-Length' (for some requests) are added.
+%% `Host', `Content-Length' or `Transfer-Encoding' (for some requests) 
+%% are added automatically.
+%%
 %% `Body' is the entity to send in the request. Please don't include entity
 %% bodies where there shouldn't be any (such as for `GET').
+%%
 %% `Timeout' is the timeout for the request in milliseconds.
+%%
 %% `Options' is a list of options.
 %%
 %% Options:
@@ -192,9 +256,67 @@ request(URL, Method, Hdrs, Body, Timeout, Options) ->
 %% it will either give up when the TCP stack gives up, or when the overall
 %% request timeout is reached. 
 %%
+%% `{connect_options, Options}' specifies options to pass to the socket at
+%% connect time. This makes it possible to specify both SSL options and
+%% regular socket options, such as which IP/Port to connect from etc.
+%% Some options must not be included here, namely the mode, `binary'
+%% or `list', `{active, boolean()}', `{active, once}' or `{packet, Packet}'.
+%% These options would confuse the client if they are included.
+%% Please note that these options will only have an effect on *new*
+%% connections, and it isn't possible for different requests
+%% to the same host uses different options unless the connection is closed
+%% between the requests. Using HTTP/1.0 or including the "Connection: close"
+%% header would make the client close the connection after the first
+%% response is received.
+%%
 %% `{send_retry, N}' specifies how many times the client should retry
 %% sending a request if the connection is closed after the data has been
-%% sent. The default value is 1.
+%% sent. The default value is `1'. If `{partial_upload, WindowSize}'
+%% (see below) is specified, the client cannot retry after the first part
+%% of the body has been sent since it doesn't keep the whole entitity body
+%% in memory.
+%%
+%% `{partial_upload, WindowSize}' means that the request entity body will be
+%% supplied in parts to the client by the calling process. The `WindowSize'
+%% specifies how many parts can be sent to the process controlling the socket
+%% before waiting for an acknowledgement. This is to create a kind of
+%% internal flow control if the network is slow and the client process is
+%% blocked by the TCP stack. Flow control is disabled if `WindowSize' is
+%% `infinity'. If `WindowSize' is an integer, it must be >= 0. If partial
+%% upload is specified and no `Content-Length' is specified in `Hdrs' the
+%% client will use chunked transfer encoding to send the entity body.
+%% If a content length is specified, this must be the total size of the entity
+%% body.
+%% The call to {@link request/6} will return `{ok, UploadState}'. The
+%% `UploadState' is supposed to be used as the first argument to the {@link
+%% send_body_part/2} or {@link send_body_part/3} functions to send body parts.
+%% Partial upload is intended to avoid keeping large request bodies in
+%% memory but can also be used when the complete size of the body isn't known
+%% when the request is started.
+%%
+%% `{partial_download, PartialDownloadOptions}' means that the response body
+%% will be supplied in parts by the client to the calling process. The partial
+%% download option `{window_size, WindowSize}' specifies how many part will be
+%% sent to the calling process before waiting for an acknowledgement. This is
+%% to create a kind of internal flow control if the calling process is slow to
+%% process the body part and the network and server are considerably faster.
+%% Flow control is disabled if `WindowSize' is `infinity'. If `WindowSize'
+%% is an integer it must be >=0. The partial download option `{part_size,
+%% PartSize}' specifies the size the body parts should come in. Note however
+%% that if the body size is not determinable (e.g entity body is termintated
+%% by closing the socket) it will be delivered in pieces as it is read from
+%% the wire. There is no caching of the body parts until the amount reaches
+%% body size. If the body size is bounded (e.g `Content-Length' specified or
+%% `Transfer-Encoding: chunked' specified) it will be delivered in `PartSize'
+%% pieces. Note however that the last piece might be smaller than `PartSize'.
+%% Size bounded entity bodies are handled the same way as unbounded ones if
+%% `PartSize' is `infinity'. If `PartSize' is integer it must be >= 0.
+%% If `{partial_download, PartialDownloadOptions}' is specified the 
+%% `ResponseBody' will be a `pid()' unless the response has no body
+%% (for example in case of `HEAD' requests). In that case it will be be
+%% `undefined'. The functions {@link get_body_part/1} and
+%% {@link get_body_part/2} can be used to read body parts in the calling
+%% process.
 %% @end
 -spec request(string(), 1..65535, true | false, string(), atom() | string(),
     headers(), iolist(), pos_integer(), [option()]) -> result().
@@ -217,6 +339,181 @@ request(Host, Port, Ssl, Path, Method, Hdrs, Body, Timeout, Options) ->
             exit(Reason)
     after Timeout ->
             kill_client(Pid)
+    end.
+
+%% @spec (UploadState :: UploadState, BodyPart :: BodyPart) -> Result
+%%   BodyPart = iolist() | binary()
+%%   Timeout = integer() | infinity
+%%   Result = {error, Reason} | UploadState
+%%   Reason = connection_closed | connect_timeout | timeout
+%% @doc Sends a body part to an ongoing request when
+%% `{partial_upload, WindowSize}' is used. The default timeout, `infinity'
+%% will be used. Notice that if `WindowSize' is infinity, this call will never
+%% block.
+%% Would be the same as calling
+%% `send_body_part(UploadState, BodyPart, infinity)'.
+%% @end
+-spec send_body_part({pid(), window_size()}, iolist()) -> 
+        {pid(), window_size()} | result().
+send_body_part({Pid, Window}, IoList) ->
+    send_body_part({Pid, Window}, IoList, infinity).
+
+%% @spec (UploadState :: UploadState, BodyPart :: BodyPart, Timeout) -> Result
+%%   BodyPart = iolist() | binary()
+%%   Timeout = integer() | infinity
+%%   Result = {error, Reason} | UploadState
+%%   Reason = connection_closed | connect_timeout | timeout
+%% @doc Sends a body part to an ongoing request when
+%% `{partial_upload, WindowSize}' is used.
+%% `Timeout' is the timeout for the request in milliseconds.
+%%
+%% If the window size reaches 0 the call will block for at maximum Timeout
+%% milliseconds. If there is no acknowledgement received during that time the
+%% the request is cancelled and `{error, timeout}' is returned.
+%%
+%% As long as the window size is larger than 0 the function will return 
+%% immediately after sending the body part to the request handling process.
+%% 
+%% The `BodyPart' `http_eob' signals an end of the entity body, the request
+%% is considered sent and the response will be read from the socket. If
+%% there is no response within `Timeout' milliseconds, the request is
+%% canceled and `{error, timeout}' is returned.
+%% @end
+-spec send_body_part({pid(), window_size()}, iolist(), timeout()) -> 
+        {ok, {pid(), window_size()}} | result().
+send_body_part({Pid, _Window}, http_eob, Timeout) when is_pid(Pid) ->
+    Pid ! {body_part, self(), http_eob},
+    read_response(Pid, Timeout);
+send_body_part({Pid, 0}, IoList, Timeout) when is_pid(Pid) ->
+    receive
+        {ack, Pid} ->
+            send_body_part({Pid, 1}, IoList, Timeout);
+        {response, Pid, R} ->
+            R;
+        {exit, Pid, Reason} ->
+            exit(Reason);
+        {'EXIT', Pid, Reason} ->
+            exit(Reason)
+    after Timeout ->
+        kill_client(Pid)
+    end;
+send_body_part({Pid, Window}, IoList, _Timeout) when Window > 0, is_pid(Pid) ->
+                                                     % atom > 0 =:= true
+    Pid ! {body_part, self(), IoList},
+    receive
+        {ack, Pid} ->
+            {ok, {Pid, Window}};
+        {reponse, Pid, R} ->
+            R;
+        {exit, Pid, Reason} ->
+            exit(Reason);
+        {'EXIT', Pid, Reason} ->
+            exit(Reason)
+    after 0 ->
+        {ok, {Pid, lhttpc_lib:dec(Window)}}
+    end.
+
+%% @spec (UploadState :: UploadState, Trailers) -> Result
+%%   Header = string() | binary() | atom()
+%%   Value = string() | binary()
+%%   Result = {ok, {{StatusCode, ReasonPhrase}, Hdrs, ResponseBody}}
+%%            | {error, Reason}
+%%   Reason = connection_closed | connect_timeout | timeout
+%% @doc Sends trailers to an ongoing request when `{partial_upload,
+%% WindowSize}' is used and no `Content-Length' was specified. The default
+%% timout `infinity' will be used. Plase note that after this the request is
+%% considered complete and the response will be read from the socket. 
+%% Would be the same as calling
+%% `send_trailers(UploadState, BodyPart, infinity)'.
+%% @end
+-spec send_trailers({pid(), window_size()}, headers()) -> result().
+send_trailers({Pid, Window}, Trailers) ->
+    send_trailers({Pid, Window}, Trailers, infinity).
+
+%% @spec (UploadState :: UploadState, Trailers, Timeout) -> Result
+%%   Trailers = [{Header, Value}]
+%%   Header = string() | binary() | atom()
+%%   Value = string() | binary()
+%%   Timeout = integer() | infinity
+%%   Result = {ok, {{StatusCode, ReasonPhrase}, Hdrs, ResponseBody}}
+%%            | {error, Reason}
+%%   Reason = connection_closed | connect_timeout | timeout
+%% @doc Sends trailers to an ongoing request when
+%% `{partial_upload, WindowSize}' is used and no `Content-Length' was
+%% specified.
+%% `Timeout' is the timeout for sending the trailers and reading the
+%% response in milliseconds.
+%%
+%% Sending trailers also signals the end of the entity body, which means
+%% that no more body parts, or trailers can be sent and the response to the
+%% request will be read from the socket. If no response is received within
+%% `Timeout' milliseconds the request is canceled and `{error, timeout}' is
+%% returned.
+%% @end
+-spec send_trailers({pid(), window_size()}, [{string() | string()}], 
+        timeout()) -> result().
+send_trailers({Pid, _Window}, Trailers, Timeout)
+        when is_list(Trailers), is_pid(Pid) ->
+    Pid ! {trailers, self(), Trailers},
+    read_response(Pid, Timeout).
+
+%% @spec (HTTPClient :: pid()) -> Result
+%%   Result = {ok, BodyPart} | {ok, {http_eob, Trailers}}
+%%   BodyPart = binary()
+%%   Trailers = [{Header, Value}]
+%%   Header = string() | binary() | atom()
+%%   Value = string() | binary()
+%% @doc Reads a body part from an ongoing response when
+%% `{partial_download, PartialDownloadOptions}' is used. The default timeout,
+%% `infinity' will be used. 
+%% Would be the same as calling
+%% `get_body_part(HTTPClient, infinity)'.
+%% @end
+-spec get_body_part(pid()) -> {ok, binary()} | {ok, {http_eob, headers()}}.
+get_body_part(Pid) ->
+    get_body_part(Pid, infinity).
+
+%% @spec (HTTPClient :: pid(), Timeout:: Timeout) -> Result
+%%   Timeout = integer() | infinity
+%%   Result = {ok, BodyPart} | {ok, {http_eob, Trailers}}
+%%   BodyPart = binary()
+%%   Trailers = [{Header, Value}]
+%%   Header = string() | binary() | atom()
+%%   Value = string() | binary()
+%% @doc Reads a body part from an ongoing response when
+%% `{partial_download, PartialDownloadOptions}' is used.
+%% `Timeout' is the timeout for reading the next body part in milliseconds. 
+%% `http_eob' marks the end of the body. If there were Trailers in the
+%% response those are returned with `http_eob' as well. 
+%% @end
+-spec get_body_part(pid(), timeout()) -> 
+        {ok, binary()} | {ok, {http_eob, headers()}}.
+get_body_part(Pid, Timeout) ->
+    receive
+        {body_part, Pid, Bin} ->
+            Pid ! {ack, self()},
+            {ok, Bin};
+        {http_eob, Pid, Trailers} ->
+            {ok, {http_eob, Trailers}}
+    after Timeout ->
+        kill_client(Pid)
+    end.
+
+%%% Internal functions
+
+-spec read_response(pid(), timeout()) -> result().
+read_response(Pid, Timeout) ->
+    receive
+        {ack, Pid} ->
+            read_response(Pid, Timeout);
+        {response, Pid, R} ->
+            R;
+        {exit, Pid, Reason} ->
+            exit(Reason);
+        {'EXIT', Pid, Reason} ->
+            exit(Reason)
+    after Timeout ->
+        kill_client(Pid)
     end.
 
 kill_client(Pid) ->
@@ -242,6 +539,23 @@ verify_options([{connect_timeout, infinity} | Options], Errors) ->
 verify_options([{connect_timeout, MS} | Options], Errors)
         when is_integer(MS), MS >= 0 ->
     verify_options(Options, Errors);
+verify_options([{partial_upload, WindowSize} | Options], Errors)
+        when is_integer(WindowSize), WindowSize >= 0 ->
+    verify_options(Options, Errors);
+verify_options([{partial_upload, infinity} | Options], Errors)  ->
+    verify_options(Options, Errors);
+verify_options([{partial_download, DownloadOptions} | Options], Errors)
+        when is_list(DownloadOptions) ->
+    case verify_partial_download(DownloadOptions, []) of
+        [] ->
+            verify_options(Options, Errors);
+        OptionErrors ->
+            NewErrors = [{partial_download, OptionErrors} | Errors],
+            verify_options(Options, NewErrors)
+    end;
+verify_options([{connect_options, List} | Options], Errors)
+        when is_list(List) ->
+    verify_options(Options, Errors);
 verify_options([Option | Options], Errors) ->
     verify_options(Options, [Option | Errors]);
 verify_options([], []) ->
@@ -252,3 +566,19 @@ verify_options([], Errors) ->
 -spec bad_options(options()) -> no_return().
 bad_options(Errors) ->
     erlang:error({bad_options, Errors}).
+
+-spec verify_partial_download(options(), options()) -> options().
+verify_partial_download([{window_size, infinity} | Options], Errors)->
+    verify_partial_download(Options, Errors);
+verify_partial_download([{window_size, Size} | Options], Errors) when
+        is_integer(Size), Size >= 0 ->
+    verify_partial_download(Options, Errors);
+verify_partial_download([{part_size, Size} | Options], Errors) when
+        is_integer(Size), Size >= 0 ->
+    verify_partial_download(Options, Errors);
+verify_partial_download([{part_size, infinity} | Options], Errors) ->
+    verify_partial_download(Options, Errors);
+verify_partial_download([Option | Options], Errors) ->
+    verify_partial_download(Options, [Option | Errors]);
+verify_partial_download([], Errors) ->
+    Errors.

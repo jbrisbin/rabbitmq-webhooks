@@ -35,8 +35,8 @@ start_link(_Name, Config) ->
   gen_server:start_link(?MODULE, [Config], []).
   
 init([Config]) ->
-		Connection = amqp_connection:start_direct(),
-		Channel = amqp_connection:open_channel(Connection),
+		{ok, Connection} = amqp_connection:start(direct),
+		{ok, Channel} = amqp_connection:open_channel(Connection),
 
 																								% Our configuration
 		Webhook = #webhook {

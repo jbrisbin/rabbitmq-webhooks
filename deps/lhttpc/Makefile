@@ -21,21 +21,25 @@ all: $(APPLICATION) doc
 
 $(APPLICATION): $(BEAMS) $(APP_FILE)
 
-test: $(APPLICATION) $(TEST_BEAMS)
+test: $(APPLICATION) $(TEST_BEAMS) util/run_test.beam
 	@echo Running tests
-	@erl -pa ebin/ -pa test/ -noinput -eval 'run_test:run()' -s erlang halt
+	@erl -pa util/ -pa ebin/ -pa test/ -noinput -s run_test run
+
+test_shell: $(APPLICATION) $(TEST_BEAMS)
+	@echo Starting a shell with test paths included
+	@erl -pa ebin/ -pa test/
 
 test/%.beam: test/%.erl
 	@echo Compiling $<
 	@erlc +debug_info -o test/ $<
 
-$(APP_FILE): src/$(APPLICATION).app.src vsn.mk 
+$(APP_FILE): src/$(APPLICATION).app.src 
 	@echo Generating $@
-	@sed -e 's/@MODULES@/$(MODULELIST)/' -e 's/@VSN@/$(VSN)/' $< > $@
+	@sed -e 's/{modules, \[\]}/{modules, \[$(MODULELIST)\]}/' $< > $@
 
 ebin/%.beam: src/%.erl $(HEADERS) $(filter-out $(wildcard ebin), ebin)
 	@echo Compiling $<
-	@erlc +debug_info -o ebin/ $<
+	@erlc +debug_info +warn_missing_spec -o ebin/ $<
 
 ebin:
 	@echo Creating ebin/
@@ -48,13 +52,18 @@ dialyzer:
 	@dialyzer --src -r src/
 
 doc/edoc-info: doc/overview.edoc $(SOURCES) 
+	@erlc -o util/ util/make_doc.erl
 	@echo Generating documentation from edoc
-	@erl -noinput -eval 'edoc:application(lhttpc, "./", [{doc, "doc/"}])' -s erlang halt
+	@erl -pa util/ -noinput -s make_doc edoc
+
+util/%.beam: util/%.erl
+	@erlc -o util/ util/run_test.erl
 
 clean:
 	@echo Cleaning
 	@rm -f ebin/*.{beam,app} test/*.beam doc/*.{html,css,png} doc/edoc-info
 	@rm -rf cover_report
+	@rm -f util/*.beam
 
 release: clean all test dialyzer
 	@util/releaser $(APPLICATION) $(VSN)

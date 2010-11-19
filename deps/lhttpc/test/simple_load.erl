@@ -1,19 +1,20 @@
 -module(simple_load).
 -behaviour(gen_httpd).
 
--export([start_client/1, start_client/3]).
+-export([start_client/2, start_client/3]).
 -export([client/2]).
 
--export([start_server/1]).
+-export([start_server/0]).
 -export([init/2, handle_continue/5, handle_request/6, terminate/2]).
 
 %%% Client part
-start_client(Clients) ->
-	start_client("localhost", 9999, Clients).
+start_client(Port, Clients) ->
+	start_client("localhost", Port, Clients).
 
 start_client(Host, Port, Clients) when Clients > 0 ->
+	start_applications([crypto, ssl, lhttpc]),
 	process_flag(trap_exit, true),
-	{ok, Body} = file:read_file("tests/1M"),
+	{ok, Body} = file:read_file("test/1M"),
 	URL = "http://" ++ Host ++ ":" ++ integer_to_list(Port) ++ "/static/1M",
 	start(Clients, URL, Body, Clients).
 
@@ -44,9 +45,10 @@ client(URL, Body) ->
 	end.
 
 %%% Server part
-start_server(Port) ->
+start_server() ->
 	SockOpts = [{backlog, 10000}],
-	gen_httpd:start_link(?MODULE, nil, Port, 600000, SockOpts).
+	{ok, Pid} = gen_httpd:start_link(?MODULE, nil, 0, 600000, SockOpts),
+	gen_httpd:port(Pid).
 
 init(_, _) ->
 	{ok, nil}.
@@ -54,11 +56,11 @@ init(_, _) ->
 handle_continue(_Method, _URI, _Vsn, _ReqHdrs, CBState) ->
 	{continue, [], CBState}.
 
-handle_request(_Method, "/static/1M", {1,1}, _, Entity, State) ->
-	case Entity of
-		{identity, Reader} ->
-			case Reader(complete, 50000) of
-				{ok, Body} ->
+handle_request(_Method, "/static/1M", {1,1}, _, EntityBody, State) ->
+	case EntityBody of
+		{identity, EntityState} ->
+			case gen_httpd:read_body(complete, 50000, EntityState) of
+				{ok, {Body, http_eob}} ->
 					{reply, 200, [], Body, State};
 				{error, Reason} ->
 					{reply, 500, [], io_lib:format("~p", [Reason]), State}
@@ -69,3 +71,13 @@ handle_request(_Method, "/static/1M", {1,1}, _, Entity, State) ->
 
 terminate(_, _) ->
 	ok.
+
+start_applications(Apps) ->
+	Started = lists:map(fun({Name, _, _}) -> Name end,
+		application:which_applications()),
+	lists:foreach(fun(App) ->
+				case lists:member(App, Started) of
+					false -> ok = application:start(App);
+					true  -> ok
+				end
+		end, Apps).

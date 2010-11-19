@@ -24,21 +24,25 @@
 %%% ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %%% ----------------------------------------------------------------------------
 
-%%% @author Oscar HellstrÃ¶m <oscar@erlang-consulting.com>
+%%% @author Oscar Hellström <oscar@hellstrom.st>
 -module(socket_server).
 
--export([open/0, connect/1, listen/0, accept/1]).
+-export([open/0, connect/2, listen/0, accept/1]).
 -export([do_accept/1]).
 
 open() ->
     {LS, Port} = listen(),
-    accept(LS),
+    Pid = accept(LS),
     {ok, Port} = inet:port(LS),
+    Pid ! {connecting, self()},
     {ok, Socket} = gen_tcp:connect({127,0,0,1}, Port, [{active, false}]),
+    receive accepted -> ok end,
     {LS, Socket}.
 
-connect(Port) ->
+connect(Pid, Port) ->
+    Pid ! {connecting, self()},
     {ok, Socket} = gen_tcp:connect({127,0,0,1}, Port, [{active, false}]),
+    receive accepted -> ok end,
     Socket.
 
 listen() ->
@@ -51,4 +55,5 @@ accept(LS) ->
 
 do_accept(LS) ->
     {ok, S} = gen_tcp:accept(LS),
+    receive {connecting, Pid} ->  Pid ! accepted end,
     {error, closed} = gen_tcp:recv(S, 0).

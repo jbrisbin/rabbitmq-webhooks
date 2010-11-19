@@ -24,7 +24,7 @@
 %%% ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %%% ----------------------------------------------------------------------------
 
-%%% @author Oscar HellstrÃ¶m <oscar@erlang-consulting.com>
+%%% @author Oscar Hellström <oscar@hellstrom.st>
 %%% @doc Connection manager for the HTTP client.
 %%% This gen_server is responsible for keeping track of persistent
 %%% connections to HTTP servers. The only interesting API is
@@ -32,6 +32,7 @@
 %%% The gen_server is supposed to be started by a supervisor, which is
 %%% normally {@link lhttpc_sup}.
 %%% @end
+%%% @type boolean() = bool().
 -module(lhttpc_manager).
 
 -export([
@@ -70,19 +71,19 @@ connection_count() ->
 %%    Destination = {Host, Port, Ssl}
 %%    Host = string()
 %%    Port = integer()
-%%    Ssl = bool()
+%%    Ssl = boolean()
 %%    Count = integer()
 %% @doc Returns the number of active connections to the specific
 %% `Destination' maintained by the httpc manager.
 %% @end
--spec connection_count({string(), pos_integer(), bool()}) ->
+-spec connection_count({string(), pos_integer(), boolean()}) ->
     non_neg_integer().
 connection_count({Host, Port, Ssl}) ->
     Destination = {string:to_lower(Host), Port, Ssl},
     gen_server:call(?MODULE, {connection_count, Destination}).
 
 %% @spec (Timeout) -> ok
-%%    Timeout = intetger()
+%%    Timeout = integer()
 %% @doc Updates the timeout for persistent connections.
 %% This will only affect future sockets handed to the manager. The sockets
 %% already managed will keep their timers.

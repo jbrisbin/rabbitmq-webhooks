@@ -25,15 +25,13 @@
 %%% ----------------------------------------------------------------------------
 
 %%% @author Oscar Hellström <oscar@hellstrom.st>
-%%% @doc This is the specification for the lhttpc application.
-%%% @end
-{application, lhttpc,
-    [{description, "Lightweight HTTP Client"},
-        {vsn, "1.2.5"},
-        {modules, []},
-        {registered, [lhttpc_manager]},
-        {applications, [kernel, stdlib, ssl, crypto]},
-  {mod, {lhttpc, nil}},
-  {env, [{connection_timeout, 300000}]}
- ]}.
+-module(make_doc).
+-export([edoc/0]).
 
+edoc() ->
+    try
+        edoc:application(lhttpc, "./", [{doc, "doc/"}])
+    catch _:_ ->
+        halt(1)
+    end,
+    halt(0).
