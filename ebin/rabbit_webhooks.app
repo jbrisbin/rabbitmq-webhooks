@@ -1,6 +1,6 @@
 {application, rabbit_webhooks, [
   {description, "Rabbit Webhooks"},
-  {vsn, "0.10"},
+  {vsn, "0.11"},
   {modules, [
     rabbit_webhooks,
     rabbit_webhooks_app,
