@@ -32,7 +32,7 @@ $(DEPS_DIR):
 	./rebar get-deps
 
 $(DEPS_EZ): 
-	$(foreach DEP, $(DEPS), zip -r $@ $(DEPS_DIR)/$(DEP);)
+	cd $(DEPS_DIR); $(foreach DEP, $(DEPS), zip -r $(DEP).ez $(DEP);)
 
 compile: $(DEPS_DIR)
 	./rebar compile
