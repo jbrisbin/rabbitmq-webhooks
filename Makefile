@@ -12,7 +12,6 @@ all: compile
 clean:
 	rm -rf $(DIST_DIR)
 	rm -rf $(EBIN_DIR)
-	rm -rf $(DEPS_DIR)
 
 distclean: clean
 	rm -rf $(DEPS_DIR)
