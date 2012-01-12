@@ -20,7 +20,7 @@
 ]).
 
 -define(REQUESTED_WITH, "RabbitMQ-Webhooks").
--define(VERSION, "1.0").
+-define(VERSION, "1.1").
 -define(ACCEPT, "application/json;q=.9,text/plain;q=.8,text/xml;q=.6,application/xml;q=.7,text/html;q=.5,*/*;q=.4").
 -define(ACCEPT_ENCODING, "gzip").
 -define(SEC_MSEC, 1000).
@@ -35,77 +35,93 @@ start_link(_Name, Config) ->
   gen_server:start_link(?MODULE, [Config], []).
   
 init([Config]) ->
-		{ok, Connection} = amqp_connection:start(direct),
-		{ok, Channel} = amqp_connection:open_channel(Connection),
+  Username = case application:get_env(username) of
+    {ok, U} -> U;
+    _ -> <<"guest">>
+  end,
+  %io:format("username: ~p~n", [Username]),
+  VHost = case application:get_env(virtual_host) of
+    {ok, V} -> V;
+    _ -> <<"/">>
+  end,
+  %io:format("vhost: ~p~n", [VHost]),
+  AmqpParams = #amqp_params_direct{ username = Username, virtual_host = VHost },
+  %io:format("params: ~p~n", [AmqpParams]),
+	{ok, Connection} = amqp_connection:start(AmqpParams),
+	{ok, Channel} = amqp_connection:open_channel(Connection),
 
-																								% Our configuration
-		Webhook = #webhook {
-			url=proplists:get_value(url, Config),
-			method=proplists:get_value(method, Config),
-			exchange=case proplists:get_value(exchange, Config) of
-									 [{exchange, Xname} | Xconfig] -> #'exchange.declare'{
-										 exchange=Xname,
-										 type=proplists:get_value(type, Xconfig, <<"topic">>),
-										 auto_delete=proplists:get_value(auto_delete, Xconfig, true),
-										 durable=proplists:get_value(durable, Xconfig, false)}
-							 end,
-			queue=case proplists:get_value(queue, Config) of
-																								% Allow for load-balancing by using named queues (optional)
-								[{queue, Qname} | Qconfig] -> 
-										#'queue.declare'{ queue=Qname,
-																			auto_delete=proplists:get_value(auto_delete, Qconfig, true),
-																			durable=proplists:get_value(durable, Qconfig, false)};
-																								% Default to an anonymous queue
-								_ -> #'queue.declare'{ auto_delete=true }
-						end,
-			routing_key=proplists:get_value(routing_key, Config),
-			max_send=case proplists:get_value(max_send, Config) of
-									 {Max, second} -> {second, Max, ?SEC_MSEC};
-									 {Max, minute} -> {minute, Max, ?MIN_MSEC};
-									 {Max, hour} -> {hour, Max, ?HOUR_MSEC};
-									 {Max, day} -> {day, Max, ?DAY_MSEC};
-									 {Max, week} -> {week, Max, ?WEEK_MSEC};
-									 {_, Freq} -> 
-											 io:format("Invalid frequency: ~p~n", [Freq]),
-											 invalid;
-									 _ -> infinity
-							 end,
-			send_if=proplists:get_value(send_if, Config, always)},
+	Webhook = #webhook{
+		url = proplists:get_value(url, Config),
+		method = proplists:get_value(method, Config),
+		exchange = case proplists:get_value(exchange, Config) of
+      [{exchange, Xname} | Xconfig] -> #'exchange.declare'{
+          exchange = Xname,
+          type = proplists:get_value(type, Xconfig, <<"topic">>),
+          auto_delete = proplists:get_value(auto_delete, Xconfig, true),
+          durable = proplists:get_value(durable, Xconfig, false)
+    	  }
+    end,
+		queue = case proplists:get_value(queue, Config) of
+      % Allow for load-balancing by using named queues (optional)
+      [{queue, Qname} | Qconfig] -> #'queue.declare'{ 
+          queue=Qname, 
+          auto_delete=proplists:get_value(auto_delete, Qconfig, true), 
+          durable=proplists:get_value(durable, Qconfig, false)
+        };
+      % Default to an anonymous queue
+      _ -> #'queue.declare'{ auto_delete=true }
+    end,
+		routing_key = proplists:get_value(routing_key, Config),
+		max_send = case proplists:get_value(max_send, Config) of
+      {Max, second} -> {second, Max, ?SEC_MSEC};
+      {Max, minute} -> {minute, Max, ?MIN_MSEC};
+      {Max, hour} -> {hour, Max, ?HOUR_MSEC};
+      {Max, day} -> {day, Max, ?DAY_MSEC};
+      {Max, week} -> {week, Max, ?WEEK_MSEC};
+      {_, Freq} -> 
+        io:format("Invalid frequency: ~p~n", [Freq]),
+        invalid;
+      _ -> infinity
+    end,
+		send_if = proplists:get_value(send_if, Config, always)
+	},
 
-																								% Declare exchange
-		#'exchange.declare_ok'{} = amqp_channel:call(Channel, Webhook#webhook.exchange),
+  % Declare exchange
+	#'exchange.declare_ok'{} = amqp_channel:call(Channel, Webhook#webhook.exchange),
 
-																								% Declare queue
-		#'queue.declare_ok'{ queue=Q } = amqp_channel:call(Channel, Webhook#webhook.queue),
+  % Declare queue
+	#'queue.declare_ok'{ queue=Q } = amqp_channel:call(Channel, Webhook#webhook.queue),
 
-																								% Bind queue
-		QueueBind = #'queue.bind'{ queue=Q,
-															 exchange=(Webhook#webhook.exchange)#'exchange.declare'.exchange,
-															 routing_key=Webhook#webhook.routing_key},
-		#'queue.bind_ok'{} = amqp_channel:call(Channel, QueueBind),
+  % Bind queue
+	QueueBind = #'queue.bind'{ 
+	  queue=Q,
+	  exchange=(Webhook#webhook.exchange)#'exchange.declare'.exchange,
+	  routing_key=Webhook#webhook.routing_key
+	},
+	#'queue.bind_ok'{} = amqp_channel:call(Channel, QueueBind),
+	
+	amqp_selective_consumer:register_default_consumer(Channel, self()),
 
-		amqp_channel:register_default_consumer(Channel, self()),
-
-		erlang:send_after(100, self(), check_window),
- 		{ok, #state{ channel=Channel, 
-								 config=Webhook, 
-								 queue=Q, 
-								 mark=get_time() }}.
+	erlang:send_after(100, self(), check_window),
+	{ok, #state{ 
+	  channel = Channel, 
+		config = Webhook, 
+		queue = Q, 
+		mark = get_time() }
+	}.
 
 handle_call(Msg, _From, State=#state{ channel=_Channel, config=_Config }) ->
-		rabbit_log:warning(" Unkown call: ~p~n State: ~p~n", [Msg, State]),
-		{noreply, State}.
+	rabbit_log:warning(" Unkown call: ~p~n State: ~p~n", [Msg, State]),
+	{noreply, State}.
 
 handle_cast(Msg, State=#state{ channel=_Channel, config=_Config }) ->
-		rabbit_log:warning(" Unkown cast: ~p~n State: ~p~n", [Msg, State]),
-		{noreply, State}.
+	rabbit_log:warning(" Unkown cast: ~p~n State: ~p~n", [Msg, State]),
+	{noreply, State}.
 
 handle_info(subscribe, State=#state{ channel=Channel, queue=Q }) ->
-																								% Subscribe to these events
-		#'basic.consume_ok'{ consumer_tag=Tag } = amqp_channel:subscribe(Channel, 
-																																		 #'basic.consume'{ queue=Q, no_ack=false}, 
-																																		 self()),
-		{noreply, State#state{ consumer=Tag }};
+  % Subscribe to these events
+	#'basic.consume_ok'{ consumer_tag=Tag } = amqp_channel:subscribe(Channel, #'basic.consume'{ queue=Q, no_ack=false}, self()),
+	{noreply, State#state{ consumer=Tag }};
 
 handle_info(cancel, State=#state{ channel=Channel, consumer=Tag }) ->
 		amqp_channel:call(Channel, #'basic.cancel'{ consumer_tag=Tag }),
@@ -182,7 +198,11 @@ handle_info({#'basic.deliver'{ delivery_tag=DeliveryTag },
 		rabbit_log:debug("msg: ~p~n", [Msg]),
 																								% Transform message headers to HTTP headers
 		[Xhdrs, Params] = process_headers(Headers),
-		HttpHdrs = try Xhdrs ++ [{"Content-Type", binary_to_list(ContentType)},
+		CT = case ContentType of
+		  undefined -> "application/octet-stream";
+		  C -> C
+	  end,
+		HttpHdrs = try Xhdrs ++ [{"Content-Type", binary_to_list(CT)},
 												 {"Accept", ?ACCEPT},
 												 {"Accept-Encoding", ?ACCEPT_ENCODING},
 												 {"X-Requested-With", ?REQUESTED_WITH},
