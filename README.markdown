@@ -4,22 +4,23 @@ This plugin provides a "webhook" functionality to a RabbitMQ broker.
 Any message processed by this plugin will be forwarded to the URL 
 you configure, using the method you give it. 
 
-Tested against RabbitMQ versions up to 2.6.
+Tested against RabbitMQ versions up to 2.7.
 
 ### Changes
 
-<pre><code>0.12 - Updated for use with RabbitMQ 2.3.0, now uses rebar for build
-0.11 - Updated for use with RabbitMQ 2.2.0
-0.9 - Incorporated patch from @cameronharris for OTP R13 compatibility, Makefile tweak
-0.8 - Added error handling for request so bad URLs don't crash broker, fix for no message headers
-0.7 - Added send window functionality for sending webhook requests only during specified time windows
-0.6 - Added max_send config param for limiting how many outgoing HTTP requests happen
-0.5 - Use RabbitMQ's worker_pool for sending requests to handle massive dumps of messages
-0.4 - Accept more than just 200 status code for CouchDB
-0.3 - Asynchronous HTTP send, URL and method overrideable per-message.
-0.2 - URLs can be patterns and headers that start with "X-" get passed to REST URL.
-0.1 - Synchronous HTTP send, no URL patterns. Rough draft.
-</code></pre>
+* 0.13 - Updated for use with the new plugin system in RabbitMQ 2.7
+* 0.12 - Updated for use with RabbitMQ 2.3.0, now uses rebar for build
+* 0.11 - Updated for use with RabbitMQ 2.2.0
+* 0.9 - Incorporated patch from @cameronharris for OTP R13 compatibility, Makefile tweak
+* 0.8 - Added error handling for request so bad URLs don't crash broker, fix for no message headers
+* 0.7 - Added send window functionality for sending webhook requests only during specified time windows
+* 0.6 - Added max_send config param for limiting how many outgoing HTTP requests happen
+* 0.5 - Use RabbitMQ's worker_pool for sending requests to handle massive dumps of messages
+* 0.4 - Accept more than just 200 status code for CouchDB
+* 0.3 - Asynchronous HTTP send, URL and method overrideable per-message.
+* 0.2 - URLs can be patterns and headers that start with "X-" get passed to REST URL.
+* 0.1 - Synchronous HTTP send, no URL patterns. Rough draft.
+
 
 ### Be Careful!
 
@@ -31,18 +32,20 @@ Download the .tar.gz file from from the downloads section:
 
 [http://github.com/jbrisbin/rabbitmq-webhooks/downloads](http://github.com/jbrisbin/rabbitmq-webhooks/downloads)
 
-<pre><code>cd $RABBITMQ_HOME
-mkdir plugins
-cd plugins
-tar -zxvf ~/rabbit_webhooks-0.x.tar.gz
-</code></pre>
+		cd $RABBITMQ_HOME
+		mkdir plugins
+		cd plugins
+		tar -zxvf ~/rabbit_webhooks-0.x.tar.gz
 
 You should now have three .ez files in your plugins directory:
 
-<pre><code>amqp_client.ez
-lhttpc.ez
-rabbit_webhooks.ez
-</code></pre>
+		amqp_client.ez
+		lhttpc.ez
+		rabbit_webhooks.ez
+
+In 2.7, you'll have to enable the plugins to get them to work:
+
+		rabbitmq-plugins enable rabbit_webhooks
 
 Start your broker and you should see output similar to what's discussed in the "Installing" section.
 
@@ -50,35 +53,27 @@ Start your broker and you should see output similar to what's discussed in the "
 
 The build process for the webhooks plugin has changed. It now uses rebar to build.
 
-<pre><code>
-git clone https://github.com/jbrisbin/rabbitmq-webhooks.git
-cd rabbitmq-webhooks
-make
-make package
-</code></pre>
+		git clone https://github.com/jbrisbin/rabbitmq-webhooks.git
+		cd rabbitmq-webhooks
+		make
+		make package
 
 You can now install the three .ez files required:
 
-<pre><code>
-cp deps/amqp_client.ez $RABBITMQ_HOME/plugins
-cp deps/lhttpc.ez $RABBITMQ_HOME/plugins
-cp dist/rabbit_webhooks.ez $RABBITMQ_HOME/plugins
-</code></pre>
+		cp deps/amqp_client.ez $RABBITMQ_HOME/plugins
+		cp deps/lhttpc.ez $RABBITMQ_HOME/plugins
+		cp dist/rabbit_webhooks.ez $RABBITMQ_HOME/plugins
 
 When you start the broker, you should see (at the top):
 
-<pre><code>
-... plugins activated:
-* amqp_client
-* lhttpc
-* rabbit_webhooks	
-</code></pre>
+		... plugins activated:
+		* amqp_client
+		* lhttpc
+		* rabbit_webhooks	
 
 and when the server is started:
 
-<pre><code>
-Configuring Webhooks...done
-</code></pre>
+		Configuring Webhooks...done
 
 Logging is done to the server log file.
 
@@ -105,30 +100,31 @@ this. I'm open for suggestions! :)
 
 An example rabbit.config file is included. Here it is:
 
-<pre><code>[
-	{rabbit_webhooks, [
-		{webhooks, [
-			{test_one, [
-				{url, "http://localhost:8000/rest"},
-				{method, post},
-				{exchange, [
-					{exchange, &lt;&lt;"webhooks.test"&gt;&gt;},
-					{type, &lt;&lt;"topic"&gt;&gt;},
-					{auto_delete, true},
-					{durable, false}
-				]},
-				{queue, [
-					{queue, &lt;&lt;"webhooks.test.q"&gt;&gt;},
-					{auto_delete, true}
-				]},
-				{routing_key, &lt;&lt;"#"&gt;&gt;},
-				{max_send, {5, second}},
-				{send_if, [{between, {13, 24}, {13, 25}}]}
+		[
+			{rabbit_webhooks, [
+		    {username, <<"guest">>},
+		    {virtual_host, <<"/">>},
+				{webhooks, [
+					{test_one, [
+						{url, "http://localhost:8000/rest"},
+						{method, post},
+						{exchange, [
+							{exchange, &lt;&lt;"webhooks.test"&gt;&gt;},
+							{type, &lt;&lt;"topic"&gt;&gt;},
+							{auto_delete, true},
+							{durable, false}
+						]},
+						{queue, [
+							{queue, &lt;&lt;"webhooks.test.q"&gt;&gt;},
+							{auto_delete, true}
+						]},
+						{routing_key, &lt;&lt;"#"&gt;&gt;},
+						{max_send, {5, second}},
+						{send_if, [{between, {13, 24}, {13, 25}}]}
+					]}
+				]}
 			]}
-		]}
-	]}
-].
-</code></pre>
+		].
 
 ### TODO
 
