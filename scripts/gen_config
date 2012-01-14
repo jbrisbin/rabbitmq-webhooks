@@ -1,0 +1,72 @@
+#!/usr/bin/env ruby
+require 'rubygems'
+require 'liquid'
+require 'optparse'
+require 'yaml'
+
+TEMPLATE = "
+[
+  {rabbit_webhooks, [
+    {username, <<\"{{ username }}\">>},
+    {virtual_host, <<\"{{ virtual_host }}\">>},
+    {webhooks, [
+			{% for webhook in webhooks %}
+      {'{{ webhook.name }}', [
+        {url, \"{{ webhook.url }}\"},
+        {method, {% if webhook.method %}{{ webhook.method | downcase }}{% else %}post{% endif %}},
+        {exchange, [
+          {exchange, <<\"{{ webhook.exchange.name }}\">>},
+          {type, <<\"{% if webhook.exchange.type %}{{ webhook.exchange.type }}{% else %}topic{% endif %}\">>},
+          {auto_delete, {% if webhook.exchange.auto_delete %}{{ webhook.exchange.auto_delete }}{% else %}true{% endif %}},
+          {durable, {% if webhook.exchange.durable %}{{ webhook.exchange.durable }}{% else %}false{% endif %}}
+        ]},
+        {queue, [
+          {queue, <<\"{{ webhook.queue.name }}\">>},
+          {auto_delete, {% if webhook.queue.auto_delete %}{{ webhook.queue.auto_delete }}{% else %}true{% endif %}}
+        ]},
+        {routing_key, <<\"{% if webhook.routing_key %}{{ webhook.routing_key }}{% else %}\#{% endif %}\">>}
+        {% if webhook.max_send %}
+        ,{max_send, { {{ webhook.max_send.frequency }}, {{ webhook.max_send.per }} } }
+        {% endif %}
+        {% if webhook.send_if %}
+        ,{send_if, [{between, { {{ webhook.send_if.between.start_hour }}, {{ webhook.send_if.between.start_min }} }, { {{ webhook.send_if.between.end_hour }}, {{ webhook.send_if.between.end_min }} } }]}
+        {% endif %}
+      ]}{% unless forloop.last %},{% endunless %}
+			{% endfor %}
+    ]}
+  ]}
+].
+"
+
+class OptsParser
+
+  def self.parse(args)
+    options
+  end
+  
+end
+
+options = {}
+OptionParser.new do |opts|
+  opts.banner = "Usage: gen_config -c my_config.yml"
+
+  opts.on("-c", "--config CONFIG", "Config file to drive generation") do |c|
+    options[:config] = c
+  end
+  
+  opts.on_tail("-h", "--help", "Show this message") do
+    puts opts
+    exit
+  end
+end.parse!(ARGV)
+
+if options[:config] 
+  File.open(options[:config]) do |config| 
+    c = YAML::load(config)
+    puts c
+  
+    t = Liquid::Template.parse(TEMPLATE)
+    result = t.render(c)
+    puts result
+  end
+end

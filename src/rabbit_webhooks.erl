@@ -20,7 +20,7 @@
 ]).
 
 -define(REQUESTED_WITH, "RabbitMQ-Webhooks").
--define(VERSION, "0.13").
+-define(VERSION, "0.14").
 -define(ACCEPT, "application/json;q=.9,text/plain;q=.8,text/xml;q=.6,application/xml;q=.7,text/html;q=.5,*/*;q=.4").
 -define(ACCEPT_ENCODING, "gzip").
 -define(SEC_MSEC, 1000).
@@ -87,18 +87,33 @@ init([Config]) ->
 	},
 
   % Declare exchange
-	#'exchange.declare_ok'{} = amqp_channel:call(Channel, Webhook#webhook.exchange),
+	case amqp_channel:call(Channel, Webhook#webhook.exchange) of
+	  #'exchange.declare_ok'{} -> error_logger:info_msg("Declared webhooks exchange ~p~n", [Webhook#webhook.exchange]);
+	  XError -> error_logger:error_msg("ERROR creating exchange ~p~n", [XError])
+	end,
 
   % Declare queue
-	#'queue.declare_ok'{ queue=Q } = amqp_channel:call(Channel, Webhook#webhook.queue),
+	QName = case amqp_channel:call(Channel, Webhook#webhook.queue) of
+	  #'queue.declare_ok'{ queue=Q } -> 
+	    error_logger:info_msg("Declared webhooks queue ~p~n", [Q]),
+	    Q;
+	  QError -> error_logger:error_msg("ERROR creating queue ~p~n", [QError])
+  end,
 
   % Bind queue
 	QueueBind = #'queue.bind'{ 
-	  queue=Q,
+	  queue=QName,
 	  exchange=(Webhook#webhook.exchange)#'exchange.declare'.exchange,
 	  routing_key=Webhook#webhook.routing_key
 	},
-	#'queue.bind_ok'{} = amqp_channel:call(Channel, QueueBind),
+	case amqp_channel:call(Channel, QueueBind) of
+	  #'queue.bind_ok'{} -> error_logger:info_msg("Bound webhooks queue ~p -> ~p (~p)~n", [
+  	    Webhook#webhook.queue, 
+  	    Webhook#webhook.exchange, 
+  	    Webhook#webhook.routing_key
+  	  ]);
+	  BError -> error_logger:error_msg("ERROR binding webhooks queue ~p~n", [BError])
+  end,
 	
 	amqp_selective_consumer:register_default_consumer(Channel, self()),
 
@@ -106,7 +121,7 @@ init([Config]) ->
 	{ok, #state{ 
 	  channel = Channel, 
 		config = Webhook, 
-		queue = Q, 
+		queue = QName, 
 		mark = get_time() }
 	}.
 
@@ -192,10 +207,10 @@ handle_info({#'basic.deliver'{ delivery_tag=DeliveryTag },
 													content_type=ContentType, 
 													headers=Headers, 
 													reply_to=ReplyTo}, 
-												payload=Payload }=Msg }, 
+												payload=Payload }=_Msg }, 
             State=#state{ channel=Channel, config=Config }) ->
 
-		rabbit_log:debug("msg: ~p~n", [Msg]),
+    % rabbit_log:debug("msg: ~p~n", [Msg]),
 																								% Transform message headers to HTTP headers
 		[Xhdrs, Params] = process_headers(Headers),
 		CT = case ContentType of
@@ -212,7 +227,7 @@ handle_info({#'basic.deliver'{ delivery_tag=DeliveryTag },
 																 _ -> [{"X-ReplyTo", binary_to_list(ReplyTo)}]
 														 end
 								catch 
-									Ex -> rabbit_log:error("Error creating headaers: ~p~n", [Ex])
+									Ex -> error_logger:error_msg("Error creating headaers: ~p~n", [Ex])
 								end,
 
 																								% Parameter-replace the URL
@@ -249,7 +264,7 @@ handle_info(Msg, State) ->
 		{noreply, State}.
   
 terminate(_, #state{ channel=Channel, config=_Webhook, queue=_Q, consumer=Tag }) -> 
-		rabbit_log:info("Terminating ~p ~p~n", [self(), Tag]),
+		error_logger:info_msg("Terminating ~p ~p~n", [self(), Tag]),
 		if
 				Tag /= undefined -> amqp_channel:call(Channel, #'basic.cancel'{ consumer_tag = Tag })
 		end,
@@ -299,22 +314,25 @@ send_request(Channel, DeliveryTag, Url, Method, HttpHdrs, Payload) ->
 																								% Issue the actual request.
 				case lhttpc:request(Url, Method, HttpHdrs, Payload, infinity) of
 																								% Only process if the server returns 20x.
-						{ok, {{Status, _}, Hdrs, Response}} when Status >= 200 andalso Status < 300 ->
+						{ok, {{Status, _}, Hdrs, _Response}} when Status >= 200 andalso Status < 300 ->
 																								% TODO: Place result back on a queue?
-								rabbit_log:debug(" hdrs: ~p~n response: ~p~n", [Hdrs, Response]),
+                % rabbit_log:debug(" hdrs: ~p~n response: ~p~n", [Hdrs, Response]),
 																								% Check to see if we need to unzip this response
 								case re:run(proplists:get_value("Content-Encoding", Hdrs, ""), "(gzip)", [{capture, [1], list}]) of
 										nomatch ->
-																								%rabbit_log:debug("plain response: ~p~n", [Response]),
+                        % rabbit_log:debug("plain response: ~p~n", [Response]),
 												ok;
 										{match, ["gzip"]} ->
-												_Content = zlib:gunzip(Response),
-																								%rabbit_log:debug("gzipped response: ~p~n", [Content]),
+                        % _Content = case Response of
+                        %   <<>> -> <<>>; % Skip unzipping response
+                        %   _ -> zlib:gunzip(Response)
+                        % end,
+                        % rabbit_log:debug("gzipped response: ~p~n", [Content]),
 												ok
 								end,
 								amqp_channel:call(Channel, #'basic.ack'{ delivery_tag=DeliveryTag });
 						Else ->
-								rabbit_log:error("~p", [Else])
+								error_logger:error_msg("~p", [Else])
 				end
-		catch Ex -> rabbit_log:error("Error requesting ~p: ~p~n", [Url, Ex]) end.
+		catch Ex -> error_logger:error_msg("Error requesting ~p: ~p~n", [Url, Ex]) end.
 	

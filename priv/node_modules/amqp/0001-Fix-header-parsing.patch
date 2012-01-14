@@ -1,0 +1,119 @@
+From cd580c3b5a97cc0948e2716577c336648e961ea8 Mon Sep 17 00:00:00 2001
+From: Jaakko Manninen <kschzt@gmail.com>
+Date: Thu, 1 Jul 2010 10:47:55 -0700
+Subject: [PATCH] Fix header parsing
+
+---
+ amqp.js                       |    2 +-
+ test/test-headers.js          |   36 +++++++++++++++++++++++++++++++++++
+ test/test-type-and-headers.js |   42 +++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 79 insertions(+), 1 deletions(-)
+ create mode 100644 test/test-headers.js
+ create mode 100644 test/test-type-and-headers.js
+
+diff --git a/amqp.js b/amqp.js
+index a4f3754..7360d19 100644
+--- a/amqp.js
++++ b/amqp.js
+@@ -287,7 +287,7 @@ function parseSignedInteger (buffer) {
+ 
+ 
+ function parseTable (buffer) {
+-  var length = parseInt(buffer, 4);
++  var length = buffer.read + parseInt(buffer, 4);
+   var table = {};
+   while (buffer.read < length) {
+     var field = parseShortString(buffer);
+diff --git a/test/test-headers.js b/test/test-headers.js
+new file mode 100644
+index 0000000..478432c
+--- /dev/null
++++ b/test/test-headers.js
+@@ -0,0 +1,36 @@
++require('./harness');
++
++var recvCount = 0;
++var body = "the devil is in the headers";
++
++connection.addListener('ready', function () {
++  puts("connected to " + connection.serverProperties.product);
++
++  var exchange = connection.exchange('node-simple-fanout', {type: 'fanout'});
++
++  var q = connection.queue('node-simple-queue');
++
++  q.bind(exchange, "*")
++
++  q.subscribeRaw(function (m) {
++    puts("--- Message (" + m.deliveryTag + ", '" + m.routingKey + "') ---");
++    puts("--- headers: " + JSON.stringify(m.headers));
++
++    recvCount++;
++
++    assert.equal('bar', m.headers['foo']);
++  })
++  .addCallback(function () {
++    puts("publishing message");
++    exchange.publish("message.text", body, { headers: { foo: 'bar' } });
++
++    setTimeout(function () {
++      // wait one second to receive the message, then quit
++      connection.end();
++    }, 1000);
++  });
++});
++
++process.addListener('exit', function () {
++  assert.equal(1, recvCount);
++});
+diff --git a/test/test-type-and-headers.js b/test/test-type-and-headers.js
+new file mode 100644
+index 0000000..ea1da03
+--- /dev/null
++++ b/test/test-type-and-headers.js
+@@ -0,0 +1,42 @@
++require('./harness');
++// test-type-and-headers.js
++var recvCount = 0;
++var body = "the devil is in the type, and also in the headers";
++
++connection.addListener('ready', function () {
++  puts("connected to " + connection.serverProperties.product);
++
++  var exchange = connection.exchange('node-simple-fanout', {type: 'fanout'});
++
++  var q = connection.queue('node-simple-queue');
++
++  q.bind(exchange, "*")
++
++  q.subscribeRaw(function (m) {
++    puts("--- Message (" + m.deliveryTag + ", '" + m.routingKey + "') ---");
++    puts("--- type: " + m.type);
++    puts("--- headers: " + JSON.stringify(m.headers));
++
++    recvCount++;
++
++    assert.equal('typeProperty', m.type);
++    assert.equal('fooHeader', m.headers['foo']);
++  })
++  .addCallback(function () {
++    puts("publishing message");
++    exchange.publish("message.text", body, { 
++		headers: { foo: 'fooHeader' },
++		type: 'typeProperty', 
++	});
++
++    setTimeout(function () {
++      // wait one second to receive the message, then quit
++      connection.end();
++    }, 1000);
++  });
++});
++
++
++process.addListener('exit', function () {
++  assert.equal(1, recvCount);
++});
+-- 
+1.7.1
+
