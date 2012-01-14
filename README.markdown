@@ -8,6 +8,7 @@ Tested against RabbitMQ versions up to 2.7.
 
 ### Changes
 
+* 0.14 - Lots better error handling and a Ruby script for generating config files
 * 0.13 - Updated for use with the new plugin system in RabbitMQ 2.7
 * 0.12 - Updated for use with RabbitMQ 2.3.0, now uses rebar for build
 * 0.11 - Updated for use with RabbitMQ 2.2.0
@@ -22,10 +23,6 @@ Tested against RabbitMQ versions up to 2.7.
 * 0.1 - Synchronous HTTP send, no URL patterns. Rough draft.
 
 
-### Be Careful!
-
-If you misconfigure the webhooks plugin it will likely kill your broker. On the TODO list is robust error handling that will take care of this for you. But keep in mind that this is still fairly untested code. It works fine, it's just not very forgiving.
-
 ### Install from Zip
 
 Download the .tar.gz file from from the downloads section:
@@ -37,15 +34,20 @@ Download the .tar.gz file from from the downloads section:
 		cd plugins
 		tar -zxvf ~/rabbit_webhooks-0.x.tar.gz
 
-You should now have three .ez files in your plugins directory:
+You should now have two .ez files in your plugins directory:
 
-		amqp_client.ez
 		lhttpc.ez
 		rabbit_webhooks.ez
 
 In 2.7, you'll have to enable the plugins to get them to work:
 
 		rabbitmq-plugins enable rabbit_webhooks
+
+To configure your broker, download the `gen_config` script from the source tree and run it, pointing 
+to a YAML file that contains your configuration (discussed below).
+
+Copy the output of that generation to your RabbitMQ server config file (should be some place like: 
+`/etc/rabbitmq/rabbitmq.config`).
 
 Start your broker and you should see output similar to what's discussed in the "Installing" section.
 
@@ -67,9 +69,8 @@ You can now install the three .ez files required:
 When you start the broker, you should see (at the top):
 
 		... plugins activated:
-		* amqp_client
-		* lhttpc
-		* rabbit_webhooks	
+		* lhttpc-1.2.5
+		* rabbit_webhooks-0.14
 
 and when the server is started:
 
@@ -77,7 +78,7 @@ and when the server is started:
 
 Logging is done to the server log file.
 
-### Why?
+### What can I use this for?
 
 If you configure a webhook to bind to exchange "test" with routing key 
 "#", any messages published with that exchange and routing key will be 
@@ -98,7 +99,48 @@ this. I'm open for suggestions! :)
 
 ### Example Configuration
 
-An example rabbit.config file is included. Here it is:
+As of v0.14, there is a Ruby script you can use to transalte a YAML config 
+file into the more complex and finicky Erlang config file. It will generate 
+the correct atoms for you to include in your system `rabbitmq.config` file.
+
+An example YAML file will look like this (with the bare minimum left uncommented,
+everything commented out is optional and the values shown are the defaults):
+
+		--- # Test YAML file for driving config file generation.
+
+		# Broker configuration
+		username          : guest
+		virtual_host      : /
+
+		# Use a YAML alias to reference this one exchange for all configs.
+		exchange: &webhook_exchange
+		  name            : webhooks
+		  # type            : topic
+		  # auto_delete     : true
+		  # durable         : false
+
+		# Webhooks configurations
+		webhooks:
+		  - 
+		    name            : webhook1 # Name should be unique within the config file
+		    url             : http://localhost:8000/rest
+		    # method          : post # get | post | put | delete
+		    exchange        : *webhook_exchange
+		    queue:
+		      name          : webhook1 # Best to have the queue name match the config name
+		    #   auto_delete   : true
+		    # routing_key     : "#"
+		    # max_send:
+		    #   frequency     : 5
+		    #   per           : second # second | minute | hour | day | week
+		    # send_if:
+		    #   between: 
+		    #     start_hour  : 8 # 24-hour time
+		    #     start_min   : 0
+		    #     end_hour    : 17  # 24-hour time
+		    #     end_min     : 0
+
+If you want to configure it manually, an example Erlang config file is included in `priv/`:
 
 		[
 			{rabbit_webhooks, [
@@ -130,8 +172,6 @@ An example rabbit.config file is included. Here it is:
 
 Lots and lots still to do:
 
-* Add error handling so the gen_server doesn't get terminated when the 
-  URL is not alive or returns Really Bad Errors.
 * Make message sending more robust, including SSL support, authentication, 
   and several other "would be nice to have"s.
 * Expose various statii to the RabbitMQ console.
