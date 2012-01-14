@@ -99,8 +99,8 @@ this. I'm open for suggestions! :)
 
 ### Example Configuration
 
-As of v0.14, there is a Ruby script you can use to transalte a YAML config 
-file into the more complex and finicky Erlang config file. It will generate 
+As of v0.14, there is a Ruby script (`scripts/gen_config`) you can use to translate 
+a YAML config file into the more complex and finicky Erlang config file. It will generate 
 the correct atoms for you to include in your system `rabbitmq.config` file.
 
 An example YAML file will look like this (with the bare minimum left uncommented,
