@@ -4,7 +4,7 @@ This plugin provides a "webhook" functionality to a RabbitMQ broker.
 Any message processed by this plugin will be forwarded to the URL 
 you configure, using the method you give it. 
 
-Tested against RabbitMQ versions up to 2.7.
+Tested against RabbitMQ versions up to 2.8.1.
 
 ### Changes
 
