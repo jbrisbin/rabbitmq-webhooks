@@ -8,6 +8,7 @@ Tested against RabbitMQ versions up to 2.8.1.
 
 ### Changes
 
+* 0.15 - Re-built the .tar.gz file to makes sure it included the latest version of plugin code
 * 0.14 - Lots better error handling and a Ruby script for generating config files
 * 0.13 - Updated for use with the new plugin system in RabbitMQ 2.7
 * 0.12 - Updated for use with RabbitMQ 2.3.0, now uses rebar for build
