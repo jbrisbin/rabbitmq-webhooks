@@ -1,37 +1,28 @@
-PACKAGE=rabbitmq-webhooks
-DIST_DIR=dist
-EBIN_DIR=ebin
-INCLUDE_DIRS=include
-DEPS_DIR=deps
-DEPS ?= amqp_client rabbit_common lhttpc
-DEPS_EZ=$(foreach DEP, $(DEPS), $(DEPS_DIR)/$(DEP).ez)
-RABBITMQ_HOME ?= .
+PROJECT = rabbitmq_webhooks
+PROJECT_DESCRIPTION = Webhooks plugin for Rabbit
+PROJECT_MOD = rabbit_webhooks
 
-all: compile
+define PROJECT_ENV
+[
+	    {exchange, <<"metronome">>}
+	  ]
+endef
 
-clean:
-	rm -rf $(DIST_DIR)
-	rm -rf $(EBIN_DIR)
+define PROJECT_APP_EXTRA_KEYS
+	{broker_version_requirements, ["3.8.2"]}
+endef
 
-distclean: clean
-	rm -rf $(DEPS_DIR)
+DEPS = rabbit_common rabbit amqp_client dlhttpc
+TEST_DEPS = rabbitmq_ct_helpers rabbitmq_ct_client_helpers
 
-package: compile $(DEPS_EZ)
-	rm -f $(DIST_DIR)/$(PACKAGE).ez
-	mkdir -p $(DIST_DIR)/$(PACKAGE)
-	cp -r $(EBIN_DIR) $(DIST_DIR)/$(PACKAGE)
-	$(foreach EXTRA_DIR, $(INCLUDE_DIRS), cp -r $(EXTRA_DIR) $(DIST_DIR)/$(PACKAGE);)
-	(cd $(DIST_DIR); zip -r $(PACKAGE).ez $(PACKAGE))
+DEP_EARLY_PLUGINS = rabbit_common/mk/rabbitmq-early-plugin.mk
+DEP_PLUGINS = rabbit_common/mk/rabbitmq-plugin.mk
 
-install: package
-	$(foreach DEP, $(DEPS_EZ), cp $(DEP) $(RABBITMQ_HOME)/plugins;)
-	cp $(DIST_DIR)/$(PACKAGE).ez $(RABBITMQ_HOME)/plugins
+# FIXME: Use erlang.mk patched for RabbitMQ, while waiting for PRs to be
+# reviewed and merged.
 
-$(DEPS_DIR):
-	./rebar get-deps
+ERLANG_MK_REPO = https://github.com/rabbitmq/erlang.mk.git
+ERLANG_MK_COMMIT = rabbitmq-tmp
 
-$(DEPS_EZ): 
-	cd $(DEPS_DIR); $(foreach DEP, $(DEPS), zip -r $(DEP).ez $(DEP);)
-
-compile: $(DEPS_DIR)
-	./rebar compile
+include rabbitmq-components.mk
+include erlang.mk
