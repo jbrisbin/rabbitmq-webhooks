@@ -1,9 +1,0 @@
-{application, rabbit_webhooks, [
-  {description, "Rabbit Webhooks Plugin"},
-  {vsn, "0.14"},
-  {modules, []},
-  {registered, []},
-  {mod, {rabbit_webhooks_app, []}},
-  {env, []},
-  {applications, [kernel, stdlib, rabbit, amqp_client, lhttpc]}
-]}.

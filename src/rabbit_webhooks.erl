@@ -19,8 +19,9 @@
 	send_request/6
 ]).
 
+-define(NOW, erlang:timestamp()).
 -define(REQUESTED_WITH, "RabbitMQ-Webhooks").
--define(VERSION, "0.14").
+-define(VERSION, "0.15").
 -define(ACCEPT, "application/json;q=.9,text/plain;q=.8,text/xml;q=.6,application/xml;q=.7,text/html;q=.5,*/*;q=.4").
 -define(ACCEPT_ENCODING, "gzip").
 -define(SEC_MSEC, 1000).
@@ -29,23 +30,31 @@
 -define(DAY_MSEC, 86400000).
 -define(WEEK_MSEC, 604800000).
 
--record(state, { channel, config=#webhook{}, queue, consumer, sent=0, mark, next_window }).
+-record(state, { 
+          channel,
+          config = #webhook{},
+          queue,
+          consumer,
+          sent = 0,
+          mark,
+          next_window 
+         }).
 
 start_link(_Name, Config) ->   
   gen_server:start_link(?MODULE, [Config], []).
   
 init([Config]) ->
-  Username = case application:get_env(username) of
-    {ok, U} -> U;
-    _ -> <<"guest">>
-  end,
-  %io:format("username: ~p~n", [Username]),
-  VHost = case application:get_env(virtual_host) of
-    {ok, V} -> V;
-    _ -> <<"/">>
-  end,
+  %Username = case application:get_env(username) of
+  %  {ok, U} -> U;
+  %  _ -> <<"guest">>
+  %end,
+  %%io:format("username: ~p~n", [Username]),
+  %VHost = case application:get_env(virtual_host) of
+  %  {ok, V} -> V;
+  %  _ -> <<"/">>
+  %end,
   %io:format("vhost: ~p~n", [VHost]),
-  AmqpParams = #amqp_params_direct{ username = Username, virtual_host = VHost },
+  AmqpParams = #amqp_params_direct{}, % username = Username, virtual_host = VHost },
   %io:format("params: ~p~n", [AmqpParams]),
 	{ok, Connection} = amqp_connection:start(AmqpParams),
 	{ok, Channel} = amqp_connection:open_channel(Connection),
@@ -275,7 +284,7 @@ code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
 
 get_time() ->
-		{Msec, Sec, Misecs} = now(),
+		{Msec, Sec, Misecs} = ?NOW,
 		Misecs + (1000 * Sec) + (Msec * 1000000).
 
 hour_to_msec(Hr) ->

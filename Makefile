@@ -1,15 +1,35 @@
 PROJECT = rabbitmq_webhooks
 PROJECT_DESCRIPTION = Webhooks plugin for Rabbit
-PROJECT_MOD = rabbit_webhooks
+PROJECT_MOD = rabbit_webhooks_app
 
 define PROJECT_ENV
 [
-	    {exchange, <<"metronome">>}
-	  ]
+    {username, none},
+    {virtual_host, <<"/">>},
+    {webhooks, [
+      {test_one, [
+        {url, "http://localhost:5984/test"},
+        {method, post},
+        {exchange, [
+          {exchange, <<"webhooks.test">>},
+          {type, <<"topic">>},
+          {auto_delete, true},
+          {durable, false}
+        ]},
+        {queue, [
+          {queue, <<"webhooks.test.q">>},
+          {auto_delete, true}
+        ]},
+        {routing_key, <<"#">>},
+        {max_send, {5, second}},
+        {send_if, [{between, {08, 00}, {17, 00}}]}
+      ]}
+    ]}
+  ]
 endef
 
 define PROJECT_APP_EXTRA_KEYS
-	{broker_version_requirements, ["3.8.2"]}
+	{broker_version_requirements, ["3.8.0"]}
 endef
 
 DEPS = rabbit_common rabbit amqp_client dlhttpc
