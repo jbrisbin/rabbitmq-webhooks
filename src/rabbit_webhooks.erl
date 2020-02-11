@@ -222,11 +222,7 @@ handle_info({#'basic.deliver'{ delivery_tag=DeliveryTag },
     % rabbit_log:debug("msg: ~p~n", [Msg]),
 																								% Transform message headers to HTTP headers
 		[Xhdrs, Params] = process_headers(Headers),
-		CT = case ContentType of
-		  undefined -> "application/octet-stream";
-		  C -> C
-	  end,
-		HttpHdrs = try Xhdrs ++ [{"Content-Type", binary_to_list(CT)},
+		HttpHdrs = try Xhdrs ++ [{"Content-Type", maybe_add_content_type(ContentType)},
 												 {"Accept", ?ACCEPT},
 												 {"Accept-Encoding", ?ACCEPT_ENCODING},
 												 {"X-Requested-With", ?REQUESTED_WITH},
@@ -321,7 +317,7 @@ parse_url(From, Params) ->
 send_request(Channel, DeliveryTag, Url, Method, HttpHdrs, Payload) ->
 		try
 																								% Issue the actual request.
-				case lhttpc:request(Url, Method, HttpHdrs, Payload, infinity) of
+				case dlhttpc:request(Url, Method, HttpHdrs, Payload, infinity) of
 																								% Only process if the server returns 20x.
 						{ok, {{Status, _}, Hdrs, _Response}} when Status >= 200 andalso Status < 300 ->
 																								% TODO: Place result back on a queue?
@@ -345,3 +341,9 @@ send_request(Channel, DeliveryTag, Url, Method, HttpHdrs, Payload) ->
 				end
 		catch Ex -> error_logger:error_msg("Error requesting ~p: ~p~n", [Url, Ex]) end.
 	
+maybe_add_content_type(undefined) ->
+    "application/octet-stream";
+maybe_add_content_type(ContentType) when is_binary(ContentType) ->
+    binary_to_list(ContentType);
+maybe_add_content_type(ContentType) ->
+    ContentType.
