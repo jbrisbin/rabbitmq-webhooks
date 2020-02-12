@@ -4,10 +4,11 @@ This plugin provides a "webhook" functionality to a RabbitMQ broker.
 Any message processed by this plugin will be forwarded to the URL 
 you configure, using the method you give it. 
 
-Tested against RabbitMQ versions up to 2.8.1.
+Tested against RabbitMQ versions up to 3.8.2
 
 ### Changes
 
+* 0.16 - Build system changed to erlang.mk. Plugin builds and works on latest Erlang and RabbitMQ
 * 0.15 - Re-built the .tar.gz file to makes sure it included the latest version of plugin code
 * 0.14 - Lots better error handling and a Ruby script for generating config files
 * 0.13 - Updated for use with the new plugin system in RabbitMQ 2.7
@@ -59,19 +60,19 @@ The build process for the webhooks plugin has changed. It now uses rebar to buil
 		git clone https://github.com/jbrisbin/rabbitmq-webhooks.git
 		cd rabbitmq-webhooks
 		make
-		make package
+		make dist
 
 You can now install the three .ez files required:
 
-		cp deps/amqp_client.ez $RABBITMQ_HOME/plugins
-		cp deps/lhttpc.ez $RABBITMQ_HOME/plugins
-		cp dist/rabbit_webhooks.ez $RABBITMQ_HOME/plugins
+		cp plugins/dispcount.ez $RABBITMQ_HOME/plugins
+		cp plugins/dlhttpc.ez $RABBITMQ_HOME/plugins
+		cp plugins/rabbitmq_webhooks.ez $RABBITMQ_HOME/plugins
 
 When you start the broker, you should see (at the top):
 
 		... plugins activated:
 		* lhttpc-1.2.5
-		* rabbit_webhooks-0.14
+		* rabbit_webhooks-0.16
 
 and when the server is started:
 
@@ -100,7 +101,7 @@ this. I'm open for suggestions! :)
 
 ### Example Configuration
 
-As of v0.14, there is a Ruby script (`scripts/gen_config`) you can use to translate 
+As of v0.15, there is a Ruby script (`scripts/gen_config`) you can use to translate 
 a YAML config file into the more complex and finicky Erlang config file. It will generate 
 the correct atoms for you to include in your system `rabbitmq.config` file.
 
