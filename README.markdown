@@ -34,16 +34,16 @@ Download the .tar.gz file from from the downloads section:
 		cd $RABBITMQ_HOME
 		mkdir plugins
 		cd plugins
-		tar -zxvf ~/rabbit_webhooks-0.x.tar.gz
+		tar -zxvf ~/rabbitmq_webhooks-0.x.tar.gz
 
 You should now have two .ez files in your plugins directory:
 
 		lhttpc.ez
-		rabbit_webhooks.ez
+		rabbitmq_webhooks.ez
 
 In 2.7, you'll have to enable the plugins to get them to work:
 
-		rabbitmq-plugins enable rabbit_webhooks
+		rabbitmq-plugins enable rabbitmq_webhooks
 
 To configure your broker, download the `gen_config` script from the source tree and run it, pointing 
 to a YAML file that contains your configuration (discussed below).
@@ -72,7 +72,7 @@ When you start the broker, you should see (at the top):
 
 		... plugins activated:
 		* lhttpc-1.2.5
-		* rabbit_webhooks-0.16
+		* rabbitmq_webhooks-0.16
 
 and when the server is started:
 
@@ -145,8 +145,9 @@ everything commented out is optional and the values shown are the defaults):
 If you want to configure it manually, an example Erlang config file is included in `priv/`:
 
 		[
-			{rabbit_webhooks, [
+			{rabbitmq_webhooks, [
 		    {username, <<"guest">>},
+		    {password, <<"guest">>},
 		    {virtual_host, <<"/">>},
 				{webhooks, [
 					{test_one, [
