@@ -44,17 +44,25 @@ start_link(_Name, Config) ->
   gen_server:start_link(?MODULE, [Config], []).
   
 init([Config]) ->
-  %Username = case application:get_env(username) of
-  %  {ok, U} -> U;
-  %  _ -> <<"guest">>
-  %end,
-  %%io:format("username: ~p~n", [Username]),
-  %VHost = case application:get_env(virtual_host) of
-  %  {ok, V} -> V;
-  %  _ -> <<"/">>
-  %end,
+  Username = case application:get_env(username) of
+    {ok, U} -> U;
+    _ -> <<"guest">>
+  end,
+  Password = case application:get_env(password) of
+    {ok, P} -> P;
+    _ -> <<"guest">>
+  end,
+  %io:format("username: ~p~n", [Username]),
+  VHost = case application:get_env(virtual_host) of
+    {ok, V} -> V;
+    _ -> <<"/">>
+  end,
   %io:format("vhost: ~p~n", [VHost]),
-  AmqpParams = #amqp_params_direct{}, % username = Username, virtual_host = VHost },
+  AmqpParams = #amqp_params_direct{
+                  username = Username,
+                  password=Password,
+                  virtual_host = VHost
+                 },
   %io:format("params: ~p~n", [AmqpParams]),
 	{ok, Connection} = amqp_connection:start(AmqpParams),
 	{ok, Channel} = amqp_connection:open_channel(Connection),

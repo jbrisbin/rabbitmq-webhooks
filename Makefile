@@ -5,6 +5,7 @@ PROJECT_MOD = rabbit_webhooks_app
 define PROJECT_ENV
 [
     {username, <<"guest">>},
+    {password, <<"guest">>},
     {virtual_host, <<"/">>},
     {webhooks, []}
   ]
