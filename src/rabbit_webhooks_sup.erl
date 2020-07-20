@@ -26,11 +26,11 @@
 %% ====================================================================
 %% External functions
 %% ====================================================================
-start_link() -> 
-		io:format("Configuring Webhooks...", []),
-		Pid = supervisor:start_link({local, ?MODULE}, ?MODULE, []),
-		io:format("done~n", []),
-		Pid.
+start_link() ->
+  rabbit_log:info("Configuring Webhooks...", []),
+  Pid = supervisor:start_link({local, ?MODULE}, ?MODULE, []),
+  rabbit_log:info("Webhooks have been configured", []),
+  Pid.
 
 %% ====================================================================
 %% Server functions
@@ -42,25 +42,26 @@ start_link() ->
 %%          {error, Reason}
 %% --------------------------------------------------------------------
 init([]) ->
-		Workers = case application:get_env(webhooks) of
-									{ok, W} -> make_worker_configs(W);
-									_ -> 
-											io:format("no configs found...", []),
-											[]
-							end,
-																								% One worker per config element  
-		{ok, {{one_for_one, 3, 10}, Workers}}.
+  Workers = case application:get_env(webhooks) of
+              {ok, W} ->
+                make_worker_configs(W);
+              _ ->
+                rabbit_log:info("no configs found...", []),
+                []
+            end,
+  % One worker per config element
+  {ok, {{one_for_one, 3, 10}, Workers}}.
 
 make_worker_configs(Configs) ->
-		lists:foldl(fun (Config, Acc) ->
-												case Config of
-														{Name, C} ->
-																[{Name, 
-																	{rabbit_webhooks, start_link, [Name, C] },
-																	permanent,
-																	10000,
-																	worker,
-																	[ rabbit_webhooks ]
-																 } | Acc]
-												end
-								end, [], Configs).
+  lists:foldl(fun(Config, Acc) ->
+    case Config of
+      {Name, C} ->
+        [{Name,
+          {rabbit_webhooks, start_link, [Name, C]},
+          permanent,
+          10000,
+          worker,
+          [rabbit_webhooks]
+         } | Acc]
+    end
+              end, [], Configs).
