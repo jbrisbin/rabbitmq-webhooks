@@ -8,6 +8,7 @@ Tested against RabbitMQ versions up to 3.8.2
 
 ### Changes
 
+* 0.17 - Added basic auth from AMQP headers and messages requeue on dlhttp errors
 * 0.16 - Build system changed to erlang.mk. Plugin builds and works on latest Erlang and RabbitMQ
 * 0.15 - Re-built the .tar.gz file to makes sure it included the latest version of plugin code
 * 0.14 - Lots better error handling and a Ruby script for generating config files

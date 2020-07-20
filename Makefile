@@ -29,3 +29,6 @@ ERLANG_MK_COMMIT = rabbitmq-tmp
 
 include rabbitmq-components.mk
 include erlang.mk
+
+tar: dist
+	(cd plugins && tar czf ../${PROJECT}-${PROJECT_VERSION}.tar.gz dispcount-*.ez dlhttpc-*.ez ${PROJECT}-${PROJECT_VERSION}.ez)
